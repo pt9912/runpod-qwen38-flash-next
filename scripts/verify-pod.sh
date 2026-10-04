@@ -74,10 +74,14 @@ try:
 
   # GPU
   g = p.get("gpu") or {}
-  if g.get("count") == 1 and "B200" in str(g.get("id", "")):
-      ok("GPU: 1x %s" % g.get("id"))
+  want_gpu = os.environ.get("GPU_ID") or "NVIDIA B200"
+  want_n = int(os.environ.get("GPU_COUNT") or "1")
+  got_id = str(g.get("id", ""))
+  id_ok = bool(got_id) and (want_gpu.lower() in got_id.lower() or got_id.lower() in want_gpu.lower())
+  if g.get("count") == want_n and id_ok:
+      ok("GPU: %dx %s" % (want_n, got_id))
   else:
-      fail("GPU is %r x %r, expected 1x B200" % (g.get("count"), g.get("id")))
+      fail("GPU is %r x %r, expected %dx %r" % (g.get("count"), got_id, want_n, want_gpu))
 
   # Network Volume (the important one: a silently dropped volume means no model on the Pod)
   nets = ((p.get("mounts") or {}).get("network")) or []
@@ -127,6 +131,13 @@ try:
           ok("env: %s=%s (%s)" % (key, want, what))
       else:
           level("env: %s is %r, expected %r (%s)" % (key, env.get(key), want, what))
+  if env.get("TP") != str(want_n):
+      fail("env: TP is %r, expected %r (one tensor-parallel rank per GPU)" % (env.get("TP"), str(want_n)))
+  want_cvd = ",".join(str(i) for i in range(want_n))
+  if env.get("CUDA_VISIBLE_DEVICES") != want_cvd:
+      fail("env: CUDA_VISIBLE_DEVICES is %r, expected %r" % (env.get("CUDA_VISIBLE_DEVICES"), want_cvd))
+  if want_n > 1:
+      warn("%d GPUs: tensor parallelism is not validated with this recipe (it was shown on a single GPU)" % want_n)
   if env.get("MMAP") == "1" and not str(env.get("MODEL", "")).startswith("/"):
       fail("MMAP=1 needs MODEL to be a local directory, but MODEL=%r: serve-b200 would exit" % env.get("MODEL"))
   if env.get("MMAP") == "1":

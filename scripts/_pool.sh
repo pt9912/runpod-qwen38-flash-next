@@ -1,7 +1,7 @@
 # Sourced helper (no shebang, not executable): the Pod pool.
-# The pool = every Pod whose name STARTS WITH POOL_PREFIX (default: qwen3.8-flash-next-b200) and that
+# The pool = every Pod whose name STARTS WITH POOL_PREFIX (default: qwen3.8-flash-next) and that
 # is not TERMINATED. Requires _api.sh to be sourced first.
-POOL_PREFIX="${POOL_PREFIX:-qwen3.8-flash-next-b200}"
+POOL_PREFIX="${POOL_PREFIX:-qwen3.8-flash-next}"
 POOL_MEMBERS=""     # lines "id<TAB>name<TAB>status", most recently started first
 POOL_ALL_NAMES=""   # names of ALL Pods in the account (for unique naming), one per line
 POOL_ERR=""

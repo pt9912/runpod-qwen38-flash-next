@@ -11,11 +11,15 @@ MTP="${MTP:-1}"
 CACHE="${CACHE:-1}"
 MMAP="${MMAP:-0}"
 PREWARM="${PREWARM:-0}"
+TP="${TP:-1}"                       # tensor-parallel size = number of GPUs on the Pod
 
 export VLLM_PLE_NVFP4=1
 export VLLM_PLE_NVFP4_MMAP="$MMAP"
 export VLLM_PLE_NVFP4_MMAP_PREWARM="$PREWARM"
 
+if [ "$MMAP" = 1 ] && [ "$TP" != 1 ]; then
+  echo "Warning: MMAP=1 with TP=$TP is not validated (the mmap patch was tested on one GPU)." >&2
+fi
 if [ "$MMAP" = 1 ] && [ ! -d "$MODEL" ]; then
   echo "MMAP=1 requires MODEL=/local/path/to/checkpoint." >&2
   exit 2
@@ -25,7 +29,7 @@ args=(
  "$MODEL"
  --served-model-name "$SERVED_MODEL_NAME"
  --host 0.0.0.0 --port "$PORT"
- --tensor-parallel-size 1
+ --tensor-parallel-size "$TP"
  --quantization modelopt_fp4
  --gpu-memory-utilization "$GPU_MEM"
  --max-model-len "$CTX"
@@ -50,6 +54,12 @@ fi
 if [ "$MMAP" = 1 ]; then
   SPLIT='["vllm::unified_attention_with_output","vllm::unified_mla_attention_with_output","vllm::mamba_mixer2","vllm::mamba_mixer","vllm::short_conv","vllm::qwen3_8_flash_next_ple_short_conv","vllm::qwen3_8_flash_next_qsa_with_output","vllm::linear_attention","vllm::qwen_gdn_attention_core","vllm::qwen_gdn_attention_core_fused_norm_packed","vllm::sparse_attn_indexer","vllm::ple_nvfp4_mmap_lookup"]'
   args+=(--compilation-config "{\"cudagraph_mode\":\"PIECEWISE\",\"cudagraph_capture_sizes\":[1,2,4,8,16],\"splitting_ops\":$SPLIT}")
+fi
+
+# Optional extra vLLM arguments (word-split on purpose), appended last so they can override.
+if [ -n "${VLLM_EXTRA_ARGS:-}" ]; then
+  read -r -a extra <<<"$VLLM_EXTRA_ARGS"
+  args+=("${extra[@]}")
 fi
 
 exec vllm serve "${args[@]}"

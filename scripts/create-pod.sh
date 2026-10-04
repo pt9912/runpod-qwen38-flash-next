@@ -17,9 +17,12 @@
 #              The environment variable CREATE_POD_SSH=1 does the same (start-any.sh passes it on).
 # Environment (all optional):
 #   NETWORK_VOLUME_ID   REQUIRED: the ID of your Network Volume (put it in .env)
-#   POD_NAME            default: qwen3.8-flash-next-b200; must start with POOL_PREFIX (else no pool guard
+#   POD_NAME            default: qwen3.8-flash-next; must start with POOL_PREFIX (else no pool guard
 #                        ever sees it), unless --force
 #   GPU_ID              default: NVIDIA B200 (check the exact id with `make gpu`)
+#   GPU_COUNT           default: 1; N>1 gives the Pod N GPUs of the same machine and runs vLLM with
+#                       tensor parallelism N (TP=N, CUDA_VISIBLE_DEVICES=0..N-1). Not validated with this recipe.
+#   VLLM_EXTRA_ARGS     optional: extra `vllm serve` arguments appended by the image entrypoint
 #   DATACENTER          default: the datacenter of the Network Volume (required to place the Pod there)
 #   VLLM_SECRET_NAME / HF_SECRET_NAME   RunPod Secret names (defaults VLLM_API_KEY / HF_TOKEN)
 #   CONTAINER_DISK_GB   default: 50
@@ -54,8 +57,10 @@ done
 VOLUME="${NETWORK_VOLUME_ID:-}"
 [ -n "$VOLUME" ] || { echo "Set NETWORK_VOLUME_ID (the ID of your Network Volume) in .env" >&2; exit 2; }
 POD_NAME_GIVEN="${POD_NAME:-}"
-POD_NAME="${POD_NAME:-qwen3.8-flash-next-b200}"
+POD_NAME="${POD_NAME:-qwen3.8-flash-next}"
 GPU_ID="${GPU_ID:-NVIDIA B200}"
+GPU_COUNT="${GPU_COUNT:-1}"
+case "$GPU_COUNT" in [1-8]) ;; *) echo "GPU_COUNT must be a whole number from 1 to 8" >&2; exit 2 ;; esac
 DISK="${CONTAINER_DISK_GB:-50}"
 case "$DISK" in ''|*[!0-9]*) echo "CONTAINER_DISK_GB must be a whole number" >&2; exit 2 ;; esac
 case "$POD_NAME" in
@@ -122,7 +127,7 @@ if [ "$MMAP" = 1 ]; then
     *) echo "PLE_MMAP=1 needs MODEL to be a local directory (for example /workspace/models/qwen3.8-flash-next-nvfp4), not a Hugging Face id." >&2; exit 2 ;;
   esac
 fi
-body="$(POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
+body="$(POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" GPU_COUNT="$GPU_COUNT" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
   IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" MMAP="$MMAP" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
   VSEC="${VLLM_SECRET_NAME:-VLLM_API_KEY}" HSEC="${HF_SECRET_NAME:-HF_TOKEN}" python3 -c '
 import json, os
@@ -131,7 +136,7 @@ env = {
     "HF_HOME": "/workspace/huggingface",
     "HF_HUB_CACHE": "/workspace/huggingface/hub",
     "HF_XET_HIGH_PERFORMANCE": "1",
-    "CUDA_VISIBLE_DEVICES": "0",
+    "CUDA_VISIBLE_DEVICES": ",".join(str(i) for i in range(int(e["GPU_COUNT"]))),
     "VLLM_ENGINE_READY_TIMEOUT_S": "3600",
     "VLLM_CACHE_ROOT": "/workspace/vllm-cache",
     "VLLM_API_KEY": "{{ RUNPOD_SECRET_%s }}" % e["VSEC"],
@@ -140,12 +145,15 @@ env = {
     "SERVED_MODEL_NAME": "qwen3.8-flash-next",
     "CTX": e["CTX"],
     "GPU_MEM": e["GPU_MEM"],
+    "TP": e["GPU_COUNT"],
     "SEQS": "16",
     "MTP": "1",
     "CACHE": "1",
     "MMAP": e["MMAP"],
     "PREWARM": e["MMAP"],
 }
+if e.get("VLLM_EXTRA_ARGS"):
+    env["VLLM_EXTRA_ARGS"] = e["VLLM_EXTRA_ARGS"]
 if e["ONLINE"] == "1":
     env["HF_TOKEN"] = "{{ RUNPOD_SECRET_%s }}" % e["HSEC"]
 else:
@@ -157,7 +165,7 @@ body = {
     "ports": ["8000/http"] + (["22/tcp"] if e["SSH"] == "1" else []),
     "disk": int(e["DISK"]),
     "cloud": "SECURE",
-    "gpu": {"id": e["GPU_ID"], "count": 1},
+    "gpu": {"id": e["GPU_ID"], "count": int(e["GPU_COUNT"])},
     "mounts": {"network": [{"volumeId": e["VOLUME"], "path": "/workspace"}]},
     "dataCenterIds": [e["DC"]],
     "startSsh": e["SSH"] == "1",
@@ -165,7 +173,7 @@ body = {
 print(json.dumps(body))
 ')"
 
-echo "Pod to create: $POD_NAME | 1x $GPU_ID | datacenter $DC | volume $VOLUME on /workspace | disk ${DISK} GB | ssh $([ "$SSH" = 1 ] && echo on || echo off) | $([ "$ONLINE" = 1 ] && echo "downloads allowed (HF_TOKEN secret)" || echo "offline mode")"
+echo "Pod to create: $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter $DC | volume $VOLUME on /workspace | disk ${DISK} GB | ssh $([ "$SSH" = 1 ] && echo on || echo off) | $([ "$ONLINE" = 1 ] && echo "downloads allowed (HF_TOKEN secret)" || echo "offline mode")"
 printf '%s' "$body" | python3 -m json.tool | sed 's/^/  /'
 
 if [ "$YES" -ne 1 ]; then
@@ -189,7 +197,7 @@ if [ "$rc" -ne 0 ]; then
       # Only the "no capacity" answer is retryable. (Observed: "There are no longer any instances
       # available with the requested specifications.") Any other 400 is a rule violation.
       if printf '%s' "$out" | grep -qiE "instances available|no capacity|out of capacity"; then
-        echo "There is no capacity for $GPU_ID in $DC right now. Nothing was created (see the message above). Try again later: scripts/wait-for-gpu.sh B200 $DC" >&2; exit 5
+        echo "There is no capacity for ${GPU_COUNT}x $GPU_ID in $DC right now. Nothing was created (see the message above). Try again later: scripts/wait-for-gpu.sh \"$GPU_ID\" $DC" >&2; exit 5
       fi
       echo "The API rejected the request (see the message above). Nothing was created." >&2; exit 1 ;;
     "HTTP 402"*) echo "Insufficient balance. Nothing was created." >&2; exit 1 ;;

@@ -9,9 +9,9 @@
 # Usage: create-volume.sh --dc DATACENTER [--size GB] [--name NAME] [--type TIER] [--yes]
 #        create-volume.sh --list
 #   --dc DATACENTER   REQUIRED (or DATACENTER in .env): where the volume lives. The Pod is always placed
-#                     in the volume's datacenter, so pick one with B200 stock (see `make gpu`).
+#                     in the volume's datacenter, so pick one with stock of your GPU (see `make gpu`).
 #   --size GB         default 150 (VOLUME_SIZE_GB): the model is 109.23 GB plus a few GB of vLLM cache
-#   --name NAME       default qwen3.8-flash-next-b200 (VOLUME_NAME); refused if a volume has this name
+#   --name NAME       default qwen3.8-flash-next (VOLUME_NAME); refused if a volume has this name
 #   --type TIER       STANDARD (default) or HIGH_PERFORMANCE (more expensive, only in some datacenters).
 #                     STANDARD is sent explicitly: omitting it would use the datacenter's default tier.
 #   --list            show your existing volumes and exit
@@ -29,7 +29,7 @@ source "$HERE/_api.sh"
 YES=0; LIST=0
 DC="${DATACENTER:-}"
 SIZE="${VOLUME_SIZE_GB:-150}"
-NAME="${VOLUME_NAME:-qwen3.8-flash-next-b200}"
+NAME="${VOLUME_NAME:-qwen3.8-flash-next}"
 TYPE="STANDARD"
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -79,7 +79,7 @@ if [ "$LIST" -eq 1 ]; then
 fi
 
 # ---- validate the inputs
-[ -n "$DC" ] || { echo "Give --dc DATACENTER (or set DATACENTER in .env). Pick one with B200 stock: make gpu" >&2; exit 2; }
+[ -n "$DC" ] || { echo "Give --dc DATACENTER (or set DATACENTER in .env). Pick one with stock of your GPU: make gpu" >&2; exit 2; }
 case "$DC" in *[!A-Za-z0-9-]*) echo "Invalid datacenter '$DC' (expected letters, digits and dashes, e.g. EU-RO-1)" >&2; exit 2 ;; esac
 case "$SIZE" in ''|*[!0-9]*) echo "--size must be a whole number of GB" >&2; exit 2 ;; esac
 { [ "$SIZE" -ge 1 ] && [ "$SIZE" -le 4000 ]; } || { echo "--size must be between 1 and 4000 GB" >&2; exit 2; }
@@ -147,7 +147,7 @@ echo "  It can only be enlarged later, never shrunk, and it cannot move to anoth
 
 if [ "$YES" -ne 1 ]; then
   echo
-  echo "DRY RUN: nothing was created. Add --yes to create the volume. Check B200 stock in $DC first: make gpu ARGS='B200 $DC'"
+  echo "DRY RUN: nothing was created. Add --yes to create the volume. Check the stock in $DC first: make gpu ARGS='"${GPU_ID:-B200}" $DC'"
   exit 0
 fi
 

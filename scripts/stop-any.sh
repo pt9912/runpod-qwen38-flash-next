@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stops every active Pod of the pool (any status except EXITED/ERROR/TERMINATED) (name starts with POOL_PREFIX, default
-# qwen3.8-flash-next-b200). Stopping ends the GPU billing. Use this instead of pod-stop.sh when the
+# qwen3.8-flash-next). Stopping ends the GPU billing. Use this instead of pod-stop.sh when the
 # running Pod's ID changes (pool). Nothing to do if no pool Pod is running.
 #
 # Usage: stop-any.sh [--dry-run]

@@ -114,7 +114,7 @@ if [ "$rc" -ne 0 ]; then
         cat >&2 <<HINT
 The GPU on this Pod's machine is occupied by someone else (nothing was started, nothing is billed).
 Options: wait and retry, or redeploy with the same volume; see README.md "If the GPU is occupied":
-  - be notified when a B200 is free there: make wait-gpu ARGS='B200 $dc_hint'
+  - be notified when the GPU is free there: make wait-gpu ARGS='"${GPU_ID:-B200}" $dc_hint'
   - redeploy with the same volume: make create (dry run first, then ARGS=--yes)
 A redeploy changes the Pod ID; update RUNPOD_POD_ID and QWEN_URL afterwards.
 HINT

@@ -2,15 +2,16 @@
 
 Build context for the Pod image. It overlays the upstream recipe's patches on the vLLM base image and
 installs `serve-b200` as the entrypoint (it reads `MODEL`, `SERVED_MODEL_NAME`, `CTX`, `GPU_MEM`,
-`SEQS`, `MTP`, `CACHE`, `MMAP`, `PREWARM`, which `create-pod.sh` sets on the Pod).
+`SEQS`, `MTP`, `CACHE`, `MMAP`, `PREWARM`, `TP` (tensor-parallel size, default 1),
+`VLLM_EXTRA_ARGS` (appended last), which `create-pod.sh` sets on the Pod).
 
 ```bash
 IMAGE=docker.io/YOU/vllm-qwen38-b200:1 ./build.sh
 docker push docker.io/YOU/vllm-qwen38-b200:1      # then pin REMOTE_IMAGE by digest in ../.env
 ```
 
-Published build: `docker.io/pt9912/vllm-qwen38-b200:1`, digest
-`sha256:6f13de2fb100914c5ea5d381bc8cdb98a9b9ceeb9df7d9435197e7fb92d974dd` (linux/amd64, public, 19.9 GB).
+Published build: `docker.io/pt9912/vllm-qwen38-b200:2`, digest
+`sha256:4e892eef3984225001df1f57a9e7080fecd3b870469c309d9b307f3772545f76` (linux/amd64, public, 19.9 GB).
 Built and import-tested on a CPU host only; never run on a GPU.
 
 ```bash

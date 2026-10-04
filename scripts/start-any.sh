@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Gets ONE Pod of the pool running: first tries to start the stopped pool Pods one after the
 # other (each on its own machine; a failed try costs nothing), and if none can start, creates
-# a new Pod (any machine with a free B200) while the pool is smaller than POOL_MAX. It never
+# a new Pod (any machine with the GPU free) while the pool is smaller than POOL_MAX. It never
 # lets two pool Pods run: if one is already RUNNING/STARTING/PROVISIONING it does nothing.
 #
-# Pool = every Pod whose name starts with POOL_PREFIX (default qwen3.8-flash-next-b200), not TERMINATED.
-# New Pods get unique names (qwen3.8-flash-next-b200, qwen3.8-flash-next-b200-2, ...). Why restart before
+# Pool = every Pod whose name starts with POOL_PREFIX (default qwen3.8-flash-next), not TERMINATED.
+# New Pods get unique names (qwen3.8-flash-next, qwen3.8-flash-next-2, ...). Why restart before
 # creating: the measured restart on the old machine (5:56 min) was faster than a new Pod (10:09 min).
 #
 # A SUCCESS BILLS THE GPU from that moment on. A failed try creates or starts
@@ -22,7 +22,7 @@
 #   --no-create  only start existing Pods, never create one
 #   --dry-run    show the pool and what would be tried; start and create nothing
 #   --wait       afterwards run wait-for-ready.sh for the running Pod (measures the time to ready)
-# Environment: POOL_PREFIX (default qwen3.8-flash-next-b200), POOL_MAX (default 6), NETWORK_VOLUME_ID etc. as
+# Environment: POOL_PREFIX (default qwen3.8-flash-next), POOL_MAX (default 6), NETWORK_VOLUME_ID etc. as
 #   for create-pod.sh (CREATE_POD_SSH=1 makes new Pods expose ssh); READY_TIMEOUT (seconds, default 3600) for --wait
 #
 # Only ONE start-any.sh (or create-pod.sh --yes) can run at a time on this machine (a kernel file
@@ -156,7 +156,7 @@ while true; do
       esac
     done < <(pool_candidates)
 
-    # 2. Create a new Pod (any machine with a free B200) while the pool has room.
+    # 2. Create a new Pod (any machine with the GPU free) while the pool has room.
     if [ "$CREATE" -eq 1 ]; then
       if pool_refresh && [ "$(pool_count)" -lt "$POOL_MAX" ]; then
         if act="$(pool_active)"; then IFS=$'\t' read -r id name status <<<"$act"; finish "$id" "$name" "(already $status, nothing created)"; fi

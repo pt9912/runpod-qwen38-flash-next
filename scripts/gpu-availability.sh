@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Read-only: shows current stock of a GPU type (overall and per datacenter), so you
-# can see whether a B200 is free, and where, before (re)deploying.
+# can see whether the GPU is free, and where, before (re)deploying.
 # Availability is an ordering hint, not a reservation: a create can still fail.
 #
 # Usage: gpu-availability.sh [GPU_MATCH] [DATACENTER_ID]
-#   GPU_MATCH      case-insensitive GPU id/name (default: B200); an exact id/name match wins,
+#   GPU_MATCH      case-insensitive GPU id/name (default: GPU_ID from .env, else B200); an exact id/name match wins,
 #                  otherwise every GPU containing the text matches
 #   DATACENTER_ID  only report this datacenter. Default: the datacenter of the Pod
 #                  RUNPOD_POD_ID if that variable is set, otherwise the overall stock.
 #                  "any" always means the overall stock (all datacenters).
+#   GPU_COUNT      from the environment: with N>1 the stock is for N GPUs on one machine.
 #
 # Exit codes: 0 = in stock (in the given datacenter, if any), 2 = known GPU but no
 # stock (a normal answer; `make gpu` maps it to success, see the Makefile), 4 = unknown GPU type or datacenter (typo?), 1 = API/transport error.
@@ -17,7 +18,7 @@ set -euo pipefail
 # shellcheck source=scripts/_api.sh
 source "$(dirname "$0")/_api.sh"
 
-MATCH="${1:-B200}"
+MATCH="${1:-${GPU_ID:-B200}}"
 DC="${2:-}"
 
 # Datacenter: explicit value, "any" (= overall stock), or by default the Pod's own one
@@ -52,7 +53,9 @@ fi
 # Capture first so an API failure is not followed by a JSON parse traceback.
 # Note: a GPU without stock is absent from the per-datacenter catalog, so the
 # GPU catalog is queried instead; it always lists the type and its overall stock.
-response="$(api_get "/catalog/gpus?include=AVAILABILITY&product=POD")"
+COUNT_Q=""
+case "${GPU_COUNT:-1}" in 1|"") ;; [2-8]) COUNT_Q="&count=$GPU_COUNT" ;; esac   # stock of N GPUs on ONE machine
+response="$(api_get "/catalog/gpus?include=AVAILABILITY&product=POD${COUNT_Q}")"
 
 printf '%s' "$response" | python3 -c '
 import json, sys

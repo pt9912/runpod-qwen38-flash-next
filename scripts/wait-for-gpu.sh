@@ -5,7 +5,7 @@
 # can still fail.
 #
 # Usage: wait-for-gpu.sh [GPU_MATCH] [DATACENTER_ID] [INTERVAL_SECONDS] [TIMEOUT_SECONDS]
-#   defaults: B200, the datacenter of the Pod RUNPOD_POD_ID (overall stock if that is not set or
+#   defaults: GPU_ID from .env (else B200), the datacenter of the Pod RUNPOD_POD_ID (overall stock if that is not set or
 #             cannot be read), 60 s, 0 (= wait until Ctrl-C). DATACENTER_ID "any" = overall stock.
 # Example: wait-for-gpu.sh B200            (datacenter taken from RUNPOD_POD_ID)
 #          wait-for-gpu.sh B200 EU-NL-1    (explicit datacenter)
@@ -16,7 +16,7 @@
 set -euo pipefail
 : "${RUNPOD_API_KEY:?Set RUNPOD_API_KEY}"
 
-MATCH="${1:-B200}"
+MATCH="${1:-${GPU_ID:-B200}}"
 DC="${2:-}"
 INTERVAL="${3:-60}"
 TIMEOUT="${4:-0}"

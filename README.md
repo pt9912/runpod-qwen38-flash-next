@@ -1,6 +1,6 @@
 # runpod-qwen38-flash-next
 
-Bash tooling to run **Qwen3.8-Flash-Next (NVFP4)** with vLLM on **one NVIDIA B200** in RunPod Secure
+Bash tooling to run **Qwen3.8-Flash-Next (NVFP4)** with vLLM on **one NVIDIA B200** (or, configurable, another GPU or several) in RunPod Secure
 Cloud: create, verify, start, stop and check a Pod through the RunPod REST API **v2**
 (`https://api.runpod.io/v2`). Everything runs in a small Docker image through `make`.
 
@@ -28,7 +28,7 @@ make precheck                             # local config + read-only API smoke t
 make gpu                                  # B200 stock; copy the exact GPU id into .env (GPU_ID) if it differs
 ```
 
-1. **Image:** a public build is on Docker Hub (`pt9912/vllm-qwen38-b200:1`); `.env.example` already pins its
+1. **Image:** a public build is on Docker Hub (`pt9912/vllm-qwen38-b200:2`); `.env.example` already pins its
    digest as `REMOTE_IMAGE`. To build your own instead, see `image/README.md`.
 2. **Network Volume:** create one of **150 GB** (standard type) in a datacenter that has B200 stock
    (`make gpu`). The model is 109.23 GB (146 files, measured on Hugging Face) plus a few GB of vLLM cache;
@@ -58,7 +58,7 @@ make gpu                                  # B200 stock; copy the exact GPU id in
 
 | Setting | Default | Notes |
 |---|---|---|
-| GPU | 1x B200, TP=1 | `GPU_ID` |
+| GPU | 1x B200, TP=1 | `GPU_ID`, `GPU_COUNT` (TP = `GPU_COUNT`); see "Other GPUs and several GPUs" |
 | Context | 131072 | `MAX_MODEL_LEN`; raise only after this is stable |
 | KV cache | BF16 | no `--kv-cache-dtype fp8` |
 | Prefix caching | on (`--mamba-cache-mode align`) | |
@@ -68,6 +68,25 @@ make gpu                                  # B200 stock; copy the exact GPU id in
 
 The Pod overrides no command: the image entrypoint (`serve-b200`) builds the `vllm serve` line from
 those variables, and `verify-pod.sh` checks them (and fails if a `cmd` override sneaks in).
+
+## Other GPUs and several GPUs
+
+`GPU_ID` and `GPU_COUNT` in `.env` pick the card and how many of them one Pod gets. `GPU_COUNT=N` also sets
+tensor parallelism N and `CUDA_VISIBLE_DEVICES=0..N-1` on the Pod; `verify-pod.sh` checks GPU id, count, `TP`
+and the device list; `make gpu` / `make wait-gpu` report the stock of N GPUs on one machine. Use the exact id
+RunPod reports (`make gpu ARGS='RTX PRO 6000'` lists matches; there are workstation variants with other ids).
+
+| Setup | VRAM | List price seen in the console | Notes |
+|---|---|---|---|
+| 1x B200 | 180 GB | 6.79 $/h | the intended target; none free when last checked |
+| 1x H200 SXM | 141 GB | 4.59 $/h | Hopper has no FP4 tensor cores: NVFP4 would run through a software path; memory is tight (109 GB of weights), likely needs `PLE_MMAP=1` |
+| 2x RTX PRO 6000 | 2 x 96 GB | 2 x 2.09 $/h | Blackwell with native FP4, the closest relative of the GB10 (sm121) the recipe was shown on; needs tensor parallelism 2 |
+
+**Not validated:** the recipe is described for a single GPU. Whether patches 20/35/41 work with tensor
+parallelism, and whether the NVFP4 kernels run on these cards, is untested. Expect to adjust
+`VLLM_EXTRA_ARGS` (for example `--enforce-eager` while debugging) on the first start. Cards without NVLink
+(RTX PRO 6000) communicate over PCIe; NCCL settings may need tuning. Prices are the console's list prices
+from one screenshot, not read from the API.
 
 ## What differs from the GLM repo
 

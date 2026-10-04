@@ -55,7 +55,7 @@ ENV_MOUNT  := $(if $(wildcard $(ENV_FILE)),-v "$(ENV_FILE):/app/.env:ro",)
 PASSTHROUGH := -e RUNPOD_API_KEY -e RUNPOD_BASE_URL -e RUNPOD_POD_ID -e NETWORK_VOLUME_ID \
                -e VLLM_API_KEY -e QWEN_URL -e POOL_PREFIX -e POOL_MAX \
                -e REMOTE_IMAGE -e MODEL -e MAX_MODEL_LEN -e GPU_MEMORY_UTILIZATION -e PLE_MMAP \
-               -e GPU_ID -e DATACENTER -e CONTAINER_DISK_GB -e VOLUME_SIZE_GB -e VOLUME_NAME
+               -e GPU_ID -e DATACENTER -e CONTAINER_DISK_GB -e VOLUME_SIZE_GB -e VOLUME_NAME -e GPU_COUNT -e VLLM_EXTRA_ARGS
 LOCK_FILE  := $(or $(XDG_RUNTIME_DIR),/tmp)/runpod-qwen38-make-$(shell id -u).lock
 LOG_FILE   := $(CURDIR)/.startup-times.log
 DOCKER_RUN_BASE := docker run --rm -i $(ENV_MOUNT) $(PASSTHROUGH)
