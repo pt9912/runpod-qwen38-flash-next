@@ -1,6 +1,6 @@
 # runpod-qwen38-flash-next
 
-Bash tooling to run **Qwen3.8-Flash-Next (NVFP4)** with vLLM on **one NVIDIA B200** (or, configurable, another GPU or several) in RunPod Secure
+Bash tooling to run **Qwen3.8-Flash-Next (NVFP4)** with vLLM on **one NVIDIA H200 SXM** (validated, see below) or another GPU in RunPod Secure
 Cloud: create, verify, start, stop and check a Pod through the RunPod REST API **v2**
 (`https://api.runpod.io/v2`). Everything runs in a small Docker image through `make`.
 
@@ -8,17 +8,47 @@ The lifecycle scripts are derived from [pt9912/runpod-glm](https://github.com/pt
 serving image (`image/`) and the model recipe come from
 [starkweatherdigital/qwen3.8-flash-next-nvfp4-recipe](https://github.com/starkweatherdigital/qwen3.8-flash-next-nvfp4-recipe).
 
-## Status: not yet validated on a B200
+## Status
 
-- The 109 GB checkpoint `starkweatherdigital/qwen3.8-flash-next-nvfp4` was demonstrated upstream on a
-  DGX Spark / GB10 (sm121), **not on a B200**. Nothing in this repo has been run on one yet.
-- Upstream's prebuilt image (`jstarkg/vllm-gb10-flashnext`) is arm64/sm121 and cannot run on a B200;
-  `create-pod.sh` refuses it. You build an x86_64 image from `image/` yourself.
-- `image/` builds: patches 20/30/35/40/41 apply to the pinned amd64 base and the build's marker checks pass
-  (vLLM `0.1.dev20073+g8e685d198`, torch 2.13.0+cu130). It has **never run on a GPU**: whether the NVFP4
-  kernels work on a B200 is unknown until the first start.
-- Whether the image serves the Anthropic-style `/v1/messages` (needed by `scripts/claude-qwen.sh`, which runs on your machine, not through make) is unverified.
-- BF16 KV cache on purpose: the recipe reports that the QSA attention rejects an FP8 main KV cache.
+**Validated once, on 2026-10-04:** 1x **H200 SXM** (Secure Cloud, CA-MTL-3) with `PLE_MMAP=1`, image
+`:2`. Startup to `Application startup complete` took about 5 minutes (the model was already on the
+volume; image pull, weights ~110 s, `torch.compile` ~50 s, CUDA graphs, FlashInfer autotune). `make check`
+passed all five checks and two short chat requests returned coherent German answers with the reasoning
+split out (the second request ran at about 68 tokens/s end to end through the RunPod proxy; the first
+included one-time Triton JIT warm-up). This is one pod and two short requests, not a benchmark.
+
+What that run showed:
+
+- **PLE mmap is required on a 141 GB card.** Without it the weights take 102.87 GiB and vLLM reports
+  `Available KV cache memory: -10.45 GiB` and refuses to start. With `PLE_MMAP=1` the model takes
+  76.04 GiB, leaving **46.75 GiB** of KV cache (1,575,594 tokens, 12x concurrency at 131,072 tokens each).
+  `MMAP=1` needs `MODEL` to be a local directory: on the volume that is the HF cache snapshot, see below.
+- **Hopper has no native FP4:** vLLM picks the Marlin weight-only NVFP4 MoE backend and warns that
+  compute-heavy loads may be slower. It works.
+- **Tensor parallelism does not work with this recipe:** with `GPU_COUNT=2` the loader stops with
+  `NotImplementedError: NVIDIA PLE supports TP=1 only` (patch 20, `ple_layer.py`). 2x RTX PRO 6000 was
+  tried and failed there. Use one card with enough memory.
+- **A crashed Pod restarts vLLM in a loop and keeps billing.** Check the first minutes of `make logs` and
+  stop or terminate a Pod that failed.
+
+Still not done: a B200 run (none was in stock), the Anthropic-style `/v1/messages` endpoint
+(`scripts/claude-qwen.sh`), long-context tests, and any real benchmark. The 109 GB checkpoint was
+demonstrated upstream on a DGX Spark / GB10 (sm121); upstream's prebuilt arm64 image
+(`jstarkg/vllm-gb10-flashnext`) cannot run on x86 GPUs and `create-pod.sh` refuses it. BF16 KV cache on
+purpose: the recipe reports that the QSA attention rejects an FP8 main KV cache.
+
+### Known good `.env` for the H200 (volume in CA-MTL-3)
+
+```
+GPU_ID="NVIDIA H200"
+GPU_COUNT=1
+PLE_MMAP=1
+MODEL=/workspace/huggingface/hub/models--starkweatherdigital--qwen3.8-flash-next-nvfp4/snapshots/1b304e5f99de0faaf43c3a959f2b4000294bf65c
+```
+
+The snapshot directory name is the Hugging Face revision of the checkpoint (`main` was `1b304e5f...` on
+2026-10-04). The first start of a new volume needs `make create ARGS='--yes --online'` to download the
+model with the default `MODEL` (no `PLE_MMAP`); then switch to the settings above for every later start.
 
 ## Quickstart
 
@@ -58,18 +88,18 @@ make gpu                                  # B200 stock; copy the exact GPU id in
 
 | Setting | Default | Notes |
 |---|---|---|
-| GPU | 1x B200, TP=1 | `GPU_ID`, `GPU_COUNT` (TP = `GPU_COUNT`); see "Other GPUs and several GPUs" |
+| GPU | 1x B200, TP=1 | `GPU_ID`, `GPU_COUNT` (keep it 1: TP>1 is not supported by the recipe); see "Other GPUs" |
 | Context | 131072 | `MAX_MODEL_LEN`; raise only after this is stable |
 | KV cache | BF16 | no `--kv-cache-dtype fp8` |
 | Prefix caching | on (`--mamba-cache-mode align`) | |
 | Speculative decoding | native MTP, 1 token | |
-| PLE mmap | **off** (`PLE_MMAP=0`) | `1` needs `MODEL=<local dir>`; B200 has the VRAM that mmap was meant to save, so leave it off first |
+| PLE mmap | **off** (`PLE_MMAP=0`) | `1` needs `MODEL=<local dir>` and is **required on 141 GB or less** (validated on the H200); a 180 GB B200 may not need it |
 | Served name | `qwen3.8-flash-next` | |
 
 The Pod overrides no command: the image entrypoint (`serve-b200`) builds the `vllm serve` line from
 those variables, and `verify-pod.sh` checks them (and fails if a `cmd` override sneaks in).
 
-## Other GPUs and several GPUs
+## Other GPUs
 
 `GPU_ID` and `GPU_COUNT` in `.env` pick the card and how many of them one Pod gets. `GPU_COUNT=N` also sets
 tensor parallelism N and `CUDA_VISIBLE_DEVICES=0..N-1` on the Pod; `verify-pod.sh` checks GPU id, count, `TP`
@@ -80,14 +110,12 @@ variants with other ids). On 2026-10-04 `make gpu` showed `NVIDIA RTX PRO 6000 B
 | Setup | VRAM | List price seen in the console | Notes |
 |---|---|---|---|
 | 1x B200 | 180 GB | 6.79 $/h | the intended target; none free when last checked |
-| 1x H200 SXM | 141 GB | 4.59 $/h | Hopper has no FP4 tensor cores: NVFP4 would run through a software path; memory is tight (109 GB of weights), likely needs `PLE_MMAP=1` |
-| 2x RTX PRO 6000 | 2 x 96 GB | 2 x 2.09 $/h | Blackwell with native FP4, the closest relative of the GB10 (sm121) the recipe was shown on; needs tensor parallelism 2 |
+| 1x H200 SXM | 141 GB | 4.59 $/h | **validated** with `PLE_MMAP=1` (Marlin weight-only FP4 backend) |
+| 2x RTX PRO 6000 | 2 x 96 GB | 2 x 2.09 $/h | **fails**: the PLE loader supports TP=1 only. One RTX PRO 6000 (96 GB) with `PLE_MMAP=1` is untested and tight (about 80 GB of weights) |
 
-**Not validated:** the recipe is described for a single GPU. Whether patches 20/35/41 work with tensor
-parallelism, and whether the NVFP4 kernels run on these cards, is untested. Expect to adjust
-`VLLM_EXTRA_ARGS` (for example `--enforce-eager` while debugging) on the first start. Cards without NVLink
-(RTX PRO 6000) communicate over PCIe; NCCL settings may need tuning. Prices are the console's list prices
-from one screenshot, not read from the API.
+`GPU_COUNT>1` is wired through (TP and `CUDA_VISIBLE_DEVICES`), but this model cannot use it (see Status);
+the option stays for other recipes. A card with NVLink-less PCIe would also need NCCL tuning. Prices are
+the console's list prices from one screenshot, not read from the API.
 
 ## What differs from the GLM repo
 
