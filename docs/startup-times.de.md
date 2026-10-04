@@ -19,6 +19,15 @@ aus den Zeitstempeln von vLLM selbst, nicht von den Skripten dieses Repos erzeug
 | **Erste vLLM-Logzeile bis `Application startup complete`** | **5 min 26 s (326 s)**, 08:09:31 bis 08:14:57 UTC |
 | Erste Anfragen: einmaliges Triton-Kernel-JIT | etwa 6 s zusätzliche Latenz (08:17:59 bis 08:18:05 UTC) |
 
+**Ein kalter Start, am selben Tag beobachtet** (gleiche Pod-Einstellungen, aber `MAX_MODEL_LEN=262144` und
+`MAX_NUM_SEQS=6`, ein neuer Pod auf einem Host, der das Modell nicht gerade gelesen hatte): Von der ersten
+vLLM-Logzeile bis `Application startup complete` vergingen **15 min 58 s (958 s)**, 08:29:04 bis 08:45:02 UTC.
+Das Laden der Hauptgewichte dauerte **674 s** und das der Draft-Gewichte 105 s (vLLMs Summe für das Laden des
+Modells: 795 s), gegenüber 110 s und 9 s in der Tabelle oben; die Compile-Schritte brauchten 30 s und 5 s. Die
+Gewichte kommen vom Network Volume, die 5,5 Minuten oben sind also der günstige Fall (vermutlich auf diesem
+Host zwischengespeicherte Dateien); plane nach dem Anlegen oder Verschieben eines Pods **eine Viertelstunde**
+ein. Die Ursache (kaltes Lesen von etwa 100 GiB mit rund 150 MB/s) ist eine Schlussfolgerung, nicht gemessen.
+
 **Was in diesen Zahlen nicht steckt:** das Ziehen des Pod-Images (8,67 GB komprimiert) auf den Host und der
 Start des Containers, das vor der ersten vLLM-Logzeile passiert. Es wurde nicht gemessen: Die Uhr oben
 beginnt bei der ersten vLLM-Logzeile, nicht beim `startedAt` des Pods. Ebenfalls nicht gemessen: ein

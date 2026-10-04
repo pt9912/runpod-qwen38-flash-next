@@ -223,6 +223,7 @@ minutes of the log, and stop or terminate a Pod that failed.
 | `A Pod named '...' already exists` (exit 3) | the old Pod still exists, even when stopped | terminate it (`make pod-terminate`) or set `POD_NAME` |
 | `no capacity` (exit 5) | no GPU free in the volume's datacenter | `make wait-gpu`, then retry; nothing was billed |
 | `make check`: with your key HTTP 401 | the Pod's `VLLM_API_KEY` Secret is missing or differs from `.env` | create the Secret with the same value, recreate the Pod |
+| HTTP 403, body `error code: 1010`, from your own Python or other client | the RunPod proxy (Cloudflare) blocks the default Python User-Agent; `curl` is not blocked | set a different `User-Agent` header, for example `curl/8.5.0` |
 | `unknown datacenter 'PRO'` from `make gpu` | a GPU name with spaces was split | quote it: `ARGS='"RTX PRO 6000"'` |
 | `Datacenter X does not support Network Volumes` | not every datacenter has volumes | pick another (`make volume` checks first) |
 | `Unknown vLLM environment variable VLLM_PLE_NVFP4*` | the variables belong to the patch, not to vLLM | harmless |
@@ -239,12 +240,17 @@ All numbers are from the validated H200 run (141 GB card, `GPU_MEMORY_UTILIZATIO
 | Model in GPU memory | 76.04 GiB (102.87 GiB without mmap) |
 | KV cache | 46.75 GiB = **1,575,594 tokens** (about 33,700 tokens per GiB) |
 | Concurrency at 131,072 tokens | 12.02x |
-| Concurrency at 262,144 tokens | 6.01x |
+| Concurrency at 262,144 tokens, `MAX_MODEL_LEN=262144`, `MAX_NUM_SEQS=6` | **6.45x**: vLLM then reports 1,690,023 tokens for 46.76 GiB |
 
 - The KV cache is a fixed pool of tokens shared by all requests. Keep `MAX_NUM_SEQS x MAX_MODEL_LEN` at or
   below the token count vLLM prints; vLLM prints the resulting `Maximum concurrency`.
-- **6 sessions of the full native context:** `MAX_MODEL_LEN=262144`, `MAX_NUM_SEQS=6`
-  (6 x 262,144 = 1,572,864 of 1,575,594 tokens: it fits with almost no reserve; not yet run).
+- **6 sessions of the full native context** (`MAX_MODEL_LEN=262144`, `MAX_NUM_SEQS=6`): **validated to start**:
+  the KV cache holds 1,690,023 tokens, 6.45x concurrency at 262,144, about 7 % reserve. The token count per GiB is
+  not constant (33,700 at 131,072, 36,150 at 262,144); read the number vLLM prints rather than converting.
+  Tested on it: 6 concurrent short requests (200 tokens each) all finished in 7.2 s (167 tokens/s together, about
+  28 per stream, through the RunPod proxy), and a hidden code word in the middle of a synthetic text was
+  found at 56,188 and at 170,671 prompt tokens (5.4 s and 13.5 s, about 12,000 prompt tokens/s). **Not tested:**
+  six simultaneous long prompts, anything above 171k tokens, other needle positions, real documents.
 - **The model's limit is 262,144** (`max_position_embeddings`; rope type `default`, no scaling). More needs
   rope scaling. The official model card (`Qwen/Qwen3.8-Flash-Next`) says "262,144 natively and extensible up
   to 1,000,000 tokens" with **static YaRN** and gives the vLLM setting: `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`,

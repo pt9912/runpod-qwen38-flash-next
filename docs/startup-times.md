@@ -19,6 +19,14 @@ Cloud, CA-MTL-3, image `:2`, `PLE_MMAP=1`, model and caches already on the Netwo
 | **vLLM's first log line to `Application startup complete`** | **5 min 26 s (326 s)**, 08:09:31 to 08:14:57 UTC |
 | First requests: one-time Triton kernel JIT | about 6 s of extra latency (08:17:59 to 08:18:05 UTC) |
 
+**A cold start, observed on the same day** (same Pod settings but `MAX_MODEL_LEN=262144` and `MAX_NUM_SEQS=6`, a
+new Pod on a host that had not just read the model): vLLM's first log line to `Application startup complete`
+took **15 min 58 s (958 s)**, 08:29:04 to 08:45:02 UTC. Loading the main weights took **674 s** and the draft
+weights 105 s (vLLM's total for model loading: 795 s), against 110 s and 9 s in the table above; the compile
+steps were 30 s and 5 s. The weights come from the Network Volume, so the 5.5 minutes above are the
+favourable case (probably files cached on that host); plan for **a quarter of an hour** after a Pod has
+been created or moved. The cause (cold read of about 100 GiB at roughly 150 MB/s) is an inference, not measured.
+
 **What is not in these numbers:** pulling the Pod image (8.67 GB compressed) onto the host and starting
 the container, which happens before vLLM's first log line. It was not measured: the clock above starts at
 vLLM's first log line, not at the Pod's `startedAt`. Also not measured: a restart of a stopped Pod on its

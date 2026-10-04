@@ -28,6 +28,7 @@ What that run and the failed attempts showed:
   loads may be slower.
 - **Tensor parallelism does not work with this recipe:** `GPU_COUNT=2` stops with
   `NotImplementedError: NVFP4 PLE supports TP=1 only`. 2x RTX PRO 6000 failed there. Use one card.
+- **6 sessions of 262,144 tokens work:** the KV cache then holds 1,690,023 tokens (6.45x); tested with 6 concurrent requests and a code word found at up to 171k prompt tokens. **A cold start took about 16 minutes** (weights read from the volume).
 - **A crashed Pod restarts vLLM in a loop and keeps billing.** Check the first minutes of `make logs`.
 - **The model's context limit is 262,144 tokens.** The model card documents YaRN scaling up to 1M tokens (see the guide); it is untested with this build.
 
@@ -66,8 +67,7 @@ make gpu ARGS='"NVIDIA H200"'             # stock per datacenter (quote names wi
    then `make create ARGS=--yes`. The snapshot directory is the checkpoint's Hugging Face revision.
 5. `make wait-ready`, `make check`, and when done `make stop` (the volume keeps model and caches).
 
-Six sessions of the full native context: add `MAX_MODEL_LEN=262144` and `MAX_NUM_SEQS=6` (it fits with almost
-no reserve; not yet run). `make help` lists every target.
+Six sessions of the full native context: add `MAX_MODEL_LEN=262144` and `MAX_NUM_SEQS=6` (validated, 6.45x). `make help` lists every target.
 
 ## Claude Code
 

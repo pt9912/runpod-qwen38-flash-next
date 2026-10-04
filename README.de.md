@@ -30,6 +30,7 @@ Was dieser Lauf und die fehlgeschlagenen Versuche gezeigt haben:
   rechenintensiven Lasten kann es aber langsamer sein.
 - **Tensor-Parallelität geht mit diesem Rezept nicht:** `GPU_COUNT=2` bricht mit
   `NotImplementedError: NVFP4 PLE supports TP=1 only` ab. 2× RTX PRO 6000 scheiterte dort. Nimm eine Karte.
+- **6 Sitzungen mit 262.144 Tokens funktionieren:** Der KV-Cache fasst dann 1.690.023 Tokens (6,45×); getestet mit 6 gleichzeitigen Anfragen und einem Codewort, das bis 171k Prompt-Tokens gefunden wurde. **Ein kalter Start dauerte etwa 16 Minuten** (Gewichte vom Volume gelesen).
 - **Ein abgestürzter Pod startet vLLM in einer Schleife neu und rechnet weiter ab.** Die ersten Minuten von
   `make logs` ansehen.
 - **Die Kontextgrenze des Modells ist 262.144 Tokens.** Die Modellkarte beschreibt YaRN-Skalierung bis 1M Tokens (siehe Anleitung); mit diesem Build ungetestet.
@@ -69,8 +70,7 @@ make gpu ARGS='"NVIDIA H200"'             # Bestand je Rechenzentrum (Namen mit 
    dann `make create ARGS=--yes`. Das Snapshot-Verzeichnis ist die Hugging-Face-Revision des Modells.
 5. `make wait-ready`, `make check`, und zum Schluss `make stop` (das Volume behält Modell und Caches).
 
-Sechs Sitzungen mit dem vollen nativen Kontext: `MAX_MODEL_LEN=262144` und `MAX_NUM_SEQS=6` ergänzen (passt
-fast ohne Reserve; noch nicht gelaufen). `make help` listet alle Ziele.
+Sechs Sitzungen mit dem vollen nativen Kontext: `MAX_MODEL_LEN=262144` und `MAX_NUM_SEQS=6` ergänzen (validiert, 6,45×). `make help` listet alle Ziele.
 
 ## Claude Code
 
