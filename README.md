@@ -30,15 +30,20 @@ make gpu                                  # B200 stock; copy the exact GPU id in
 
 1. **Image:** a public build is on Docker Hub (`pt9912/vllm-qwen38-b200:1`); `.env.example` already pins its
    digest as `REMOTE_IMAGE`. To build your own instead, see `image/README.md`.
-2. **Create a RunPod Secret** `VLLM_API_KEY` (the API key vLLM enforces) and, for the first download,
+2. **Network Volume:** create one of **150 GB** (standard type) in a datacenter that has B200 stock
+   (`make gpu`). The model is 109.23 GB (146 files, measured on Hugging Face) plus a few GB of vLLM cache;
+   200 GB gives room for a second model revision or the mmap test. A volume can only be enlarged later,
+   never shrunk, and it is billed (about $0.07/GB/month) even while the Pod is stopped. Put its ID in
+   `NETWORK_VOLUME_ID`; Pods are always placed in the volume's datacenter.
+3. **Create a RunPod Secret** `VLLM_API_KEY` (the API key vLLM enforces) and, for the first download,
    a Secret `HF_TOKEN`. Put the same `VLLM_API_KEY` value in `.env`.
-3. **Dry run, then create** (the Pod bills the GPU as soon as it exists):
+4. **Dry run, then create** (the Pod bills the GPU as soon as it exists):
    ```bash
    make create                      # prints the request, creates nothing
    make create ARGS='--yes --online'   # first time: --online lets vLLM download the 109 GB model onto the volume
    ```
    Later runs omit `--online` (offline mode, model and caches come from the Network Volume).
-4. `make wait-ready`, `make check`, and when done `make stop`.
+5. `make wait-ready`, `make check`, and when done `make stop`.
 
 `make help` lists every target (`start`, `stop`, `terminate`, `logs`, `wait-gpu`, ...).
 
