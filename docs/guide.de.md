@@ -328,7 +328,7 @@ und die Zusammenfassung stimmte zum Repo. In der Antwort rutschte dem Modell ein
 deutschen Satz (eine Stichprobe, kein Maß). Im selben Zeitraum protokollierte der Server Anfragen, die mit
 `Unexpected reasoning effort high` abgelehnt wurden (siehe Fehlersuche); die Sitzung antwortete trotzdem, und ob
 Claude Code ohne den Wert neu angefragt hat oder ob es Hintergrundaufrufe waren, ist nicht bekannt. Image `:3`
-entfernt die Ablehnungen. **Nicht getestet:** längere Sitzungen.
+entfernt die Ablehnungen (geprüft, siehe „Eigenes Image bauen“). **Nicht getestet:** längere Sitzungen.
 
 ## Der Pod-Pool
 
@@ -361,4 +361,6 @@ Die Basis ist das linux/amd64-Manifest von `vllm/vllm-openai:qwen38-flash-next`,
 Rezept-Commit ist ebenfalls festgelegt. Der Build wendet die Patches 20, 30, 35, 40 und 41 an und scheitert,
 wenn deren Marker fehlen. Patch 10 (ein sm121-Marlin-Workaround) wird absichtlich übersprungen. Das
 veröffentlichte Image ist `pt9912/vllm-qwen38-b200:3` (Digest in `.env.example`); `:2` ist das der validierten Läufe,
-`:3` ergänzt die Chat-Vorlagen-Korrektur und lief noch nicht auf einem Pod.
+`:3` ergänzt die Chat-Vorlagen-Korrektur und wurde am 2026-10-04 auf einem Pod geprüft (gleicher KV-Cache und Start wie bei
+`:2`; `reasoning_effort` `high`, `max` und `minimal` antworten jetzt mit HTTP 200, ein ungültiger Wert wie `bogus` wird
+weiter mit 400 abgelehnt).

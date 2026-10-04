@@ -316,7 +316,7 @@ were tested with a stand-in for `claude`. **The owner then ran one real Claude C
 the repo. In that answer the model slipped a Chinese word into a German sentence (one sample, not a measure).
 During the same period the server logged requests rejected with `Unexpected reasoning effort high` (see
 Troubleshooting); the session still answered, and whether Claude Code retried without the value or those were
-background calls is not known. Image `:3` removes the rejections. **Not tested:** longer sessions.
+background calls is not known. Image `:3` removes the rejections (verified, see "The published image"). **Not tested:** longer sessions.
 
 ## The Pod pool
 
@@ -347,4 +347,5 @@ The base is the linux/amd64 manifest of `vllm/vllm-openai:qwen38-flash-next`, pi
 commit is pinned too. The build applies patches 20, 30, 35, 40 and 41 and fails if their marker strings are
 missing. Patch 10 (an sm121 Marlin workaround) is skipped on purpose. The published image is
 `pt9912/vllm-qwen38-b200:3` (digest in `.env.example`); `:2` is the one the validated runs used, `:3` adds the
-chat-template fix and has not run on a Pod yet.
+chat-template fix and was verified on a Pod on 2026-10-04 (same KV cache and startup as `:2`; with `reasoning_effort`
+`high`, `max` and `minimal` now answering HTTP 200, while an invalid value such as `bogus` is still rejected with 400).

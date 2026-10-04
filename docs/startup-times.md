@@ -27,6 +27,12 @@ steps were 30 s and 5 s. The weights come from the Network Volume, so the 5.5 mi
 favourable case (probably files cached on that host); plan for **a quarter of an hour** after a Pod has
 been created or moved. The cause (cold read of about 100 GiB at roughly 150 MB/s) is an inference, not measured.
 
+**A third start** (new Pod with image `:3`, same settings, 2026-10-04): vLLM's first log line 09:00:39 to `Application
+startup complete` 09:10:49 UTC, **10 min 10 s (610 s)**. Loading the main weights took 481 s and the draft weights 12.5 s;
+`torch.compile` took only 0.76 s and 4.2 s, because the compile cache on the volume was complete by then. The three starts so
+far: 5 min 26 s, 15 min 58 s and 10 min 10 s. The spread comes almost entirely from reading the weights from the volume
+(110 s, 674 s, 481 s), so treat **10 to 16 minutes** as the realistic range for a new Pod.
+
 **What is not in these numbers:** pulling the Pod image (8.67 GB compressed) onto the host and starting
 the container, which happens before vLLM's first log line. It was not measured: the clock above starts at
 vLLM's first log line, not at the Pod's `startedAt`. Also not measured: a restart of a stopped Pod on its

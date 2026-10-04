@@ -28,6 +28,12 @@ Gewichte kommen vom Network Volume, die 5,5 Minuten oben sind also der günstige
 Host zwischengespeicherte Dateien); plane nach dem Anlegen oder Verschieben eines Pods **eine Viertelstunde**
 ein. Die Ursache (kaltes Lesen von etwa 100 GiB mit rund 150 MB/s) ist eine Schlussfolgerung, nicht gemessen.
 
+**Ein dritter Start** (neuer Pod mit Image `:3`, gleiche Einstellungen, 2026-10-04): erste vLLM-Logzeile 09:00:39 bis
+`Application startup complete` 09:10:49 UTC, **10 min 10 s (610 s)**. Das Laden der Hauptgewichte dauerte 481 s, das der
+Draft-Gewichte 12,5 s; `torch.compile` brauchte nur 0,76 s und 4,2 s, weil der Compile-Cache auf dem Volume inzwischen
+vollständig war. Die drei Starts bisher: 5 min 26 s, 15 min 58 s und 10 min 10 s. Die Streuung kommt fast ganz vom Lesen
+der Gewichte vom Volume (110 s, 674 s, 481 s); rechne bei einem neuen Pod also mit **10 bis 16 Minuten**.
+
 **Was in diesen Zahlen nicht steckt:** das Ziehen des Pod-Images (8,67 GB komprimiert) auf den Host und der
 Start des Containers, das vor der ersten vLLM-Logzeile passiert. Es wurde nicht gemessen: Die Uhr oben
 beginnt bei der ersten vLLM-Logzeile, nicht beim `startedAt` des Pods. Ebenfalls nicht gemessen: ein
