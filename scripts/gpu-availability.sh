@@ -18,6 +18,10 @@ set -euo pipefail
 # shellcheck source=scripts/_api.sh
 source "$(dirname "$0")/_api.sh"
 
+if [ "$#" -gt 2 ]; then
+  echo "Too many arguments. A GPU name with spaces must be quoted as ONE argument, e.g. make gpu ARGS='\"RTX PRO 6000\" EU-RO-1'" >&2
+  exit 2
+fi
 MATCH="${1:-${GPU_ID:-B200}}"
 DC="${2:-}"
 

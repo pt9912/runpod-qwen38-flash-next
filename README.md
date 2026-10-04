@@ -74,7 +74,8 @@ those variables, and `verify-pod.sh` checks them (and fails if a `cmd` override 
 `GPU_ID` and `GPU_COUNT` in `.env` pick the card and how many of them one Pod gets. `GPU_COUNT=N` also sets
 tensor parallelism N and `CUDA_VISIBLE_DEVICES=0..N-1` on the Pod; `verify-pod.sh` checks GPU id, count, `TP`
 and the device list; `make gpu` / `make wait-gpu` report the stock of N GPUs on one machine. Use the exact id
-RunPod reports (`make gpu ARGS='RTX PRO 6000'` lists matches; there are workstation variants with other ids).
+RunPod reports (`make gpu ARGS='"RTX PRO 6000"'` lists matches; note the inner quotes for a name with spaces; there are workstation
+variants with other ids). On 2026-10-04 `make gpu` showed `NVIDIA RTX PRO 6000 Blackwell Server Edition`.
 
 | Setup | VRAM | List price seen in the console | Notes |
 |---|---|---|---|
