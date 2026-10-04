@@ -1,0 +1,23 @@
+# Local measurement log (see the README "Startup times")
+.startup-times.log
+
+# Local make exit-code files, one per target (see the Makefile: make's own exit code does not
+# preserve a script's real one; these hold the real one for whatever last ran)
+.make-exit-code.*
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+
+# Claude Code local settings (per-machine permission overrides, e.g. allowed Bash commands; not
+# shared project config, never commit)
+.claude/settings.local.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
