@@ -6,7 +6,8 @@
 #
 # Pool = every Pod whose name starts with POOL_PREFIX (default qwen3.8-flash-next), not TERMINATED.
 # New Pods get unique names (qwen3.8-flash-next, qwen3.8-flash-next-2, ...). Why restart before
-# creating: the measured restart on the old machine (5:56 min) was faster than a new Pod (10:09 min).
+# creating: in the GLM deployment this repo derives from, a restart on the old machine was faster than a
+# new Pod (5:56 vs 10:09 min, measured there). Not measured for this repo (see docs/startup-times.md).
 #
 # A SUCCESS BILLS THE GPU from that moment on. A failed try creates or starts
 # nothing. Only "GPU occupied"/"no capacity" (exit 5) and a temporarily unreadable Pod (exit 6)
