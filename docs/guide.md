@@ -246,8 +246,16 @@ All numbers are from the validated H200 run (141 GB card, `GPU_MEMORY_UTILIZATIO
 - **6 sessions of the full native context:** `MAX_MODEL_LEN=262144`, `MAX_NUM_SEQS=6`
   (6 x 262,144 = 1,572,864 of 1,575,594 tokens: it fits with almost no reserve; not yet run).
 - **The model's limit is 262,144** (`max_position_embeddings`; rope type `default`, no scaling). More needs
-  rope scaling such as YaRN, whose support for this model is untested; quality beyond 262k is unknown.
-  1M tokens per session is out of reach: 6 x 1M would need about 187 GiB of KV cache on top of the weights.
+  rope scaling. The official model card (`Qwen/Qwen3.8-Flash-Next`) says "262,144 natively and extensible up
+  to 1,000,000 tokens" with **static YaRN** and gives the vLLM setting: `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`,
+  `--max-model-len 1000000` and `--hf-overrides` with `text_config.rope_parameters` = `rope_type yarn`,
+  `factor 4.0` (2.0 for 524,288), `original_max_position_embeddings 262144`, `rope_theta 10000000`,
+  `partial_rotary_factor 0.25`, `mrope_interleaved true`, `mrope_section [11,11,10]`. The card warns that static
+  YaRN can hurt short texts, so set it only when needed. All variants share the 262,144 config; there is no
+  separate 1M weight set (the "1M by default" Qwen3.8-Flash is Qwen's hosted product). **Untested here:** that
+  setting with this NVFP4 build and the patches, the quality at 1M, and the prefill time.
+- **What fits on the H200 at 33,700 tokens per GiB:** 1 x 1M session needs 29.7 GiB of the 46.75 GiB (fits),
+  3 x 500k needs 44.5 GiB (fits tightly), 6 x 1M needs about 187 GiB (does not fit).
 - The KV cache stays BF16: the recipe reports that the attention layers reject an FP8 main KV cache.
 - Prefill speed for very long prompts was not measured. On Hopper the FP4 path is weight-only (Marlin),
   which is slower for compute-heavy work.

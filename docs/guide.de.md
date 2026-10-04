@@ -252,9 +252,18 @@ Alle Zahlen stammen vom validierten H200-Lauf (141-GB-Karte, `GPU_MEMORY_UTILIZA
 - **6 Sitzungen mit der vollen nativen Länge:** `MAX_MODEL_LEN=262144`, `MAX_NUM_SEQS=6`
   (6 × 262.144 = 1.572.864 von 1.575.594 Tokens: passt fast ohne Reserve; noch nicht gelaufen).
 - **Die Grenze des Modells ist 262.144** (`max_position_embeddings`; Rope-Typ `default`, keine Skalierung).
-  Mehr braucht eine Rope-Skalierung wie YaRN, deren Unterstützung für dieses Modell ungetestet ist; die
-  Qualität darüber ist unbekannt. 1M Tokens je Sitzung sind außer Reichweite: 6 × 1M bräuchten zusätzlich zu
-  den Gewichten etwa 187 GiB KV-Cache.
+  Mehr braucht eine Rope-Skalierung. Die offizielle Modellkarte (`Qwen/Qwen3.8-Flash-Next`) sagt „262,144
+  natively and extensible up to 1,000,000 tokens“ mit **statischem YaRN** und nennt die vLLM-Einstellung:
+  `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`, `--max-model-len 1000000` und `--hf-overrides` mit
+  `text_config.rope_parameters` = `rope_type yarn`, `factor 4.0` (2.0 für 524.288),
+  `original_max_position_embeddings 262144`, `rope_theta 10000000`, `partial_rotary_factor 0.25`,
+  `mrope_interleaved true`, `mrope_section [11,11,10]`. Die Karte warnt, dass statisches YaRN kurze Texte
+  verschlechtern kann; setze es also nur bei Bedarf. Alle Varianten teilen die 262.144-Konfiguration; es gibt
+  keine eigenen 1M-Gewichte (das „1M by default“ von Qwen3.8-Flash ist Qwens gehostetes Produkt).
+  **Hier ungetestet:** diese Einstellung mit diesem NVFP4-Build und den Patches, die Qualität bei 1M und die
+  Zeit für das Einlesen.
+- **Was bei 33.700 Tokens je GiB auf die H200 passt:** 1 × 1M-Sitzung braucht 29,7 der 46,75 GiB (passt),
+  3 × 500k brauchen 44,5 GiB (passt knapp), 6 × 1M bräuchten etwa 187 GiB (passt nicht).
 - Der KV-Cache bleibt BF16: Das Rezept meldet, dass die Aufmerksamkeitsschichten einen FP8-KV-Cache ablehnen.
 - Die Geschwindigkeit bei sehr langen Prompts wurde nicht gemessen. Auf Hopper läuft der FP4-Pfad nur für
   die Gewichte (Marlin), das ist bei rechenintensiver Arbeit langsamer.

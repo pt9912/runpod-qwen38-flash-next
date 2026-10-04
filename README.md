@@ -29,7 +29,7 @@ What that run and the failed attempts showed:
 - **Tensor parallelism does not work with this recipe:** `GPU_COUNT=2` stops with
   `NotImplementedError: NVFP4 PLE supports TP=1 only`. 2x RTX PRO 6000 failed there. Use one card.
 - **A crashed Pod restarts vLLM in a loop and keeps billing.** Check the first minutes of `make logs`.
-- **The model's context limit is 262,144 tokens.** More would need rope scaling (untested).
+- **The model's context limit is 262,144 tokens.** The model card documents YaRN scaling up to 1M tokens (see the guide); it is untested with this build.
 
 Not done: a B200 run (none was in stock), a real interactive Claude Code session, long-context tests and
 any real benchmark. The upstream arm64 image (`jstarkg/vllm-gb10-flashnext`) cannot run on x86 GPUs;

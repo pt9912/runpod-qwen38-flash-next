@@ -32,7 +32,7 @@ Was dieser Lauf und die fehlgeschlagenen Versuche gezeigt haben:
   `NotImplementedError: NVFP4 PLE supports TP=1 only` ab. 2× RTX PRO 6000 scheiterte dort. Nimm eine Karte.
 - **Ein abgestürzter Pod startet vLLM in einer Schleife neu und rechnet weiter ab.** Die ersten Minuten von
   `make logs` ansehen.
-- **Die Kontextgrenze des Modells ist 262.144 Tokens.** Mehr bräuchte Rope-Skalierung (ungetestet).
+- **Die Kontextgrenze des Modells ist 262.144 Tokens.** Die Modellkarte beschreibt YaRN-Skalierung bis 1M Tokens (siehe Anleitung); mit diesem Build ungetestet.
 
 Nicht erledigt: ein B200-Lauf (keine war frei), eine echte interaktive Claude-Code-Sitzung, Tests mit langem
 Kontext und jeder echte Benchmark. Das arm64-Image von Upstream (`jstarkg/vllm-gb10-flashnext`) läuft nicht auf
