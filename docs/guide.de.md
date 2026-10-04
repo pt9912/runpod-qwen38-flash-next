@@ -256,8 +256,15 @@ Alle Zahlen stammen vom validierten H200-Lauf (141-GB-Karte, `GPU_MEMORY_UTILIZA
   umzurechnen. Darauf getestet: 6 gleichzeitige kurze Anfragen (je 200 Tokens) waren in 7,2 s alle fertig
   (zusammen 167 Tokens/s, etwa 28 je Strom, über den RunPod-Proxy), und ein verstecktes Codewort in der Mitte
   eines synthetischen Textes wurde bei 56.188 und bei 170.671 Prompt-Tokens gefunden (5,4 s und 13,5 s, etwa
-  12.000 Prompt-Tokens/s). **Nicht getestet:** sechs gleichzeitige lange Prompts, alles über 171k Tokens,
-  andere Positionen des Codeworts, echte Dokumente.
+  12.000 Prompt-Tokens/s). Lange Läufe: Ein Prompt mit 254.572 Tokens (97 % der Grenze) lieferte beide
+  versteckten Schlüssel (bei 20 % und 80 %) in 21 s; **sechs gleichzeitige Prompts mit je 248.177 Tokens**
+  (1.489.060 Tokens, 88 % des KV-Caches, jeder mit eigenem Text und eigener Schlüsselposition von 10 % bis
+  90 %) lieferten alle den richtigen Schlüssel, in je 61 bis 108 s und insgesamt 108 s (etwa 13.800
+  Prompt-Tokens/s). Im gefilterten Pod-Log erschien kein Fehler. **Nicht getestet:** alles über den nativen
+  262.144 (YaRN), Schlussfolgern über echte Dokumente, Antwortqualität am Ende des Kontextes, gleichzeitiges
+  langes Generieren. Einen versteckten Schlüssel in synthetischem, sich wiederholendem Text zu finden, ist eine
+  leichte Aufgabe; es zeigt, dass Cache, Scheduler und der Pfad für langen Kontext funktionieren, nicht wie gut
+  das Modell über lange Eingaben schlussfolgert.
 - **Die Grenze des Modells ist 262.144** (`max_position_embeddings`; Rope-Typ `default`, keine Skalierung).
   Mehr braucht eine Rope-Skalierung. Die offizielle Modellkarte (`Qwen/Qwen3.8-Flash-Next`) sagt „262,144
   natively and extensible up to 1,000,000 tokens“ mit **statischem YaRN** und nennt die vLLM-Einstellung:

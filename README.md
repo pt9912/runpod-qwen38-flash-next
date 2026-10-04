@@ -28,12 +28,12 @@ What that run and the failed attempts showed:
   loads may be slower.
 - **Tensor parallelism does not work with this recipe:** `GPU_COUNT=2` stops with
   `NotImplementedError: NVFP4 PLE supports TP=1 only`. 2x RTX PRO 6000 failed there. Use one card.
-- **6 sessions of 262,144 tokens work:** the KV cache then holds 1,690,023 tokens (6.45x); tested with 6 concurrent requests and a code word found at up to 171k prompt tokens. **A cold start took about 16 minutes** (weights read from the volume).
+- **6 sessions of 262,144 tokens work:** the KV cache then holds 1,690,023 tokens (6.45x); tested with six simultaneous prompts of 248k tokens each (all returned a hidden key) and one prompt of 254k tokens (two hidden keys found); that is a retrieval test, not a reasoning benchmark. **A cold start took about 16 minutes** (weights read from the volume).
 - **A crashed Pod restarts vLLM in a loop and keeps billing.** Check the first minutes of `make logs`.
 - **The model's context limit is 262,144 tokens.** The model card documents YaRN scaling up to 1M tokens (see the guide); it is untested with this build.
 
-Not done: a B200 run (none was in stock), a real interactive Claude Code session, long-context tests and
-any real benchmark. The upstream arm64 image (`jstarkg/vllm-gb10-flashnext`) cannot run on x86 GPUs;
+Not done: a B200 run (none was in stock), a real interactive Claude Code session, anything above the native
+262,144 tokens (YaRN) and any real benchmark. The upstream arm64 image (`jstarkg/vllm-gb10-flashnext`) cannot run on x86 GPUs;
 `create-pod.sh` refuses it. The KV cache stays BF16 on purpose (the recipe reports that the attention
 layers reject FP8).
 

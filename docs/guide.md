@@ -249,8 +249,14 @@ All numbers are from the validated H200 run (141 GB card, `GPU_MEMORY_UTILIZATIO
   not constant (33,700 at 131,072, 36,150 at 262,144); read the number vLLM prints rather than converting.
   Tested on it: 6 concurrent short requests (200 tokens each) all finished in 7.2 s (167 tokens/s together, about
   28 per stream, through the RunPod proxy), and a hidden code word in the middle of a synthetic text was
-  found at 56,188 and at 170,671 prompt tokens (5.4 s and 13.5 s, about 12,000 prompt tokens/s). **Not tested:**
-  six simultaneous long prompts, anything above 171k tokens, other needle positions, real documents.
+  found at 56,188 and at 170,671 prompt tokens (5.4 s and 13.5 s, about 12,000 prompt tokens/s). Long runs:
+  one prompt of 254,572 tokens (97 % of the limit) returned both of two hidden keys (at 20 % and 80 %) in 21 s;
+  **six simultaneous prompts of 248,177 tokens each** (1,489,060 tokens, 88 % of the KV cache, each with its own text
+  and key position from 10 % to 90 %) all returned the right key, in 61 to 108 s each and 108 s in total (about
+  13,800 prompt tokens/s). No error appeared in the filtered Pod log. **Not tested:** anything above the native
+  262,144 (YaRN), reasoning over real documents, answer quality near the end of the context, concurrent
+  long decoding. Finding one hidden key in synthetic repetitive text is an easy task; it shows that the cache,
+  the scheduler and the long-context path work, not how well the model reasons over long inputs.
 - **The model's limit is 262,144** (`max_position_embeddings`; rope type `default`, no scaling). More needs
   rope scaling. The official model card (`Qwen/Qwen3.8-Flash-Next`) says "262,144 natively and extensible up
   to 1,000,000 tokens" with **static YaRN** and gives the vLLM setting: `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`,
