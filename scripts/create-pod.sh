@@ -16,14 +16,19 @@
 #              keys registered in your RunPod account and an sshd in the image (not verified for this image).
 #              The environment variable CREATE_POD_SSH=1 does the same (start-any.sh passes it on).
 # Environment (all optional):
-#   NETWORK_VOLUME_ID   REQUIRED: the ID of your Network Volume (put it in .env)
+#   STORAGE             network (default) or global; see scripts/_storage.sh. With global, the model is on a
+#                       Global Volume and the caches on the container disk. The API cannot attach a Global
+#                       Volume, so --yes is refused: the dry run prints the settings for the web console.
+#   HF_HOME_DIR / VLLM_CACHE_DIR   default: under /workspace (network), under /root/.cache (global)
+#   NETWORK_VOLUME_ID   REQUIRED with STORAGE=network: the ID of your Network Volume (put it in .env)
 #   POD_NAME            default: qwen3.8-flash-next; must start with POOL_PREFIX (else no pool guard
 #                        ever sees it), unless --force
 #   GPU_ID              default: NVIDIA B200 (check the exact id with `make gpu`)
 #   GPU_COUNT           default: 1; N>1 gives the Pod N GPUs of the same machine and runs vLLM with
 #                       tensor parallelism N (TP=N, CUDA_VISIBLE_DEVICES=0..N-1). Not validated with this recipe.
 #   VLLM_EXTRA_ARGS     optional: extra `vllm serve` arguments appended by the image entrypoint
-#   DATACENTER          default: the datacenter of the Network Volume (required to place the Pod there)
+#   DATACENTER          default: the datacenter of the Network Volume (required to place the Pod there);
+#                       with STORAGE=global: unset = any datacenter
 #   VLLM_SECRET_NAME / HF_SECRET_NAME   RunPod Secret names (defaults VLLM_API_KEY / HF_TOKEN)
 #   CONTAINER_DISK_GB   default: 50
 #   REMOTE_IMAGE        REQUIRED: the patched x86_64 vLLM image (image/), ideally pinned by digest
@@ -34,6 +39,7 @@
 #   YARN_FACTOR         optional: static YaRN factor (4.0 for 1M, 2.0 for 524288) to go beyond the native
 #                       262144; needs MAX_MODEL_LEN above 262144 and <= 262144 x factor. Unset = no scaling
 #   PLE_MMAP            default 0; 1 needs MODEL=<local dir> and is not validated on B200
+#                       (with STORAGE=global, MODEL must be a local dir anyway, e.g. /workspace/models/...)
 #
 # Exit codes: 0 = dry run done, or Pod created and verified; 1 = failure, or the Pod was created
 # but FAILED verification (it is then stopped and renamed, or terminated; see the messages);
@@ -48,6 +54,8 @@ HERE="$(dirname "$0")"
 source "$HERE/_api.sh"
 # shellcheck source=scripts/_pool.sh
 source "$HERE/_pool.sh"
+# shellcheck source=scripts/_storage.sh
+source "$HERE/_storage.sh"
 
 YES=0; ONLINE=0; SSH=0; FORCE=0; TERMINATE_ON_FAIL=0
 [ "${CREATE_POD_SSH:-0}" != 1 ] || SSH=1
@@ -58,8 +66,17 @@ for a in "$@"; do
   esac
 done
 
-VOLUME="${NETWORK_VOLUME_ID:-}"
-[ -n "$VOLUME" ] || { echo "Set NETWORK_VOLUME_ID (the ID of your Network Volume) in .env" >&2; exit 2; }
+if [ "$STORAGE" = global ] && [ "$YES" -eq 1 ]; then
+  echo "STORAGE=global: the RunPod API cannot attach a Global Volume (v1 and v2, checked 2026-10-04), so a Pod" >&2
+  echo "created here would have no model. Nothing was created. Run without --yes: the dry run prints the" >&2
+  echo "settings to enter in the web console (Pods > Deploy)." >&2
+  exit 2
+fi
+VOLUME=""
+if [ "$STORAGE" = network ]; then
+  VOLUME="${NETWORK_VOLUME_ID:-}"
+  [ -n "$VOLUME" ] || { echo "Set NETWORK_VOLUME_ID (the ID of your Network Volume) in .env (or STORAGE=global)" >&2; exit 2; }
+fi
 POD_NAME_GIVEN="${POD_NAME:-}"
 POD_NAME="${POD_NAME:-qwen3.8-flash-next}"
 GPU_ID="${GPU_ID:-NVIDIA B200}"
@@ -78,9 +95,9 @@ case "$POD_NAME" in
     ;;
 esac
 
-# 1. The Pod must be placed in the volume's datacenter.
+# 1. The Pod must be placed in the volume's datacenter (a Global Volume has none).
 DC="${DATACENTER:-}"
-if [ -z "$DC" ]; then
+if [ -z "$DC" ] && [ "$STORAGE" = network ]; then
   vol="$(api_get "/network-volumes/$VOLUME" 2>&1)" || { printf '%s\n' "$vol" >&2; echo "Could not read Network Volume $VOLUME." >&2; exit 1; }
   DC="$(printf '%s' "$vol" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("dataCenter") or d.get("dataCenterId") or "")' 2>/dev/null)"
   [ -n "$DC" ] || { echo "Could not determine the datacenter of volume $VOLUME; set DATACENTER." >&2; exit 1; }
@@ -132,6 +149,12 @@ if [ -n "$YARN" ]; then
   python3 -c 'import sys; f, c = float(sys.argv[1]), int(sys.argv[2]); sys.exit(0 if f > 1 and 262144 < c <= 262144 * f else 1)' "$YARN" "$CTX" \
     || { echo "YARN_FACTOR=$YARN needs a factor above 1 and MAX_MODEL_LEN between 262145 and 262144 x factor (now $CTX)" >&2; exit 2; }
 fi
+if [ "$STORAGE" = global ]; then
+  case "$MODEL" in
+    /*) ;;
+    *) echo "STORAGE=global needs MODEL to be the model's directory on the Global Volume (for example /workspace/models/qwen3.8-flash-next-nvfp4), not a Hugging Face id: a download onto the Global Volume is not safe (no file locks, no atomic rename) and one onto the container disk would repeat on every new Pod." >&2; exit 2 ;;
+  esac
+fi
 MMAP="${PLE_MMAP:-0}"
 case "$MMAP" in 0|1) ;; *) echo "PLE_MMAP must be 0 or 1" >&2; exit 2 ;; esac
 if [ "$MMAP" = 1 ]; then
@@ -140,18 +163,18 @@ if [ "$MMAP" = 1 ]; then
     *) echo "PLE_MMAP=1 needs MODEL to be a local directory (for example /workspace/models/qwen3.8-flash-next-nvfp4), not a Hugging Face id." >&2; exit 2 ;;
   esac
 fi
-body="$(POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" GPU_COUNT="$GPU_COUNT" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
+body="$(HF_HOME_DIR="$HF_HOME_DIR" VLLM_CACHE_DIR="$VLLM_CACHE_DIR" POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" GPU_COUNT="$GPU_COUNT" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
   IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" SEQS="$SEQS" MMAP="$MMAP" YARN="$YARN" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
   VSEC="${VLLM_SECRET_NAME:-VLLM_API_KEY}" HSEC="${HF_SECRET_NAME:-HF_TOKEN}" python3 -c '
 import json, os
 e = os.environ
 env = {
-    "HF_HOME": "/workspace/huggingface",
-    "HF_HUB_CACHE": "/workspace/huggingface/hub",
+    "HF_HOME": e["HF_HOME_DIR"],
+    "HF_HUB_CACHE": e["HF_HOME_DIR"] + "/hub",
     "HF_XET_HIGH_PERFORMANCE": "1",
     "CUDA_VISIBLE_DEVICES": ",".join(str(i) for i in range(int(e["GPU_COUNT"]))),
     "VLLM_ENGINE_READY_TIMEOUT_S": "3600",
-    "VLLM_CACHE_ROOT": "/workspace/vllm-cache",
+    "VLLM_CACHE_ROOT": e["VLLM_CACHE_DIR"],
     "VLLM_API_KEY": "{{ RUNPOD_SECRET_%s }}" % e["VSEC"],
     # read by serve-b200 (image/serve-b200.sh)
     "MODEL": e["MODEL"],
@@ -181,12 +204,38 @@ body = {
     "disk": int(e["DISK"]),
     "cloud": "SECURE",
     "gpu": {"id": e["GPU_ID"], "count": int(e["GPU_COUNT"])},
-    "mounts": {"network": [{"volumeId": e["VOLUME"], "path": "/workspace"}]},
-    "dataCenterIds": [e["DC"]],
     "startSsh": e["SSH"] == "1",
 }
+if e["VOLUME"]:
+    body["mounts"] = {"network": [{"volumeId": e["VOLUME"], "path": "/workspace"}]}
+if e["DC"]:
+    body["dataCenterIds"] = [e["DC"]]
 print(json.dumps(body))
 ')"
+
+if [ "$STORAGE" = global ]; then
+  echo "Pod to create IN THE WEB CONSOLE (STORAGE=global): $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter ${DC:-any} | Global Volume on /workspace | caches on the container disk"
+  echo
+  printf '%s' "$body" | python3 -c '
+import json, sys
+b = json.load(sys.stdin)
+print("Enter these values (Pods > Deploy; Secure Cloud):")
+print("  Pod name ......... %s   (must start with the pool prefix, or no script finds it)" % b["name"])
+print("  GPU .............. %dx %s%s" % (b["gpu"]["count"], b["gpu"]["id"], ", datacenter %s" % b["dataCenterIds"][0] if b.get("dataCenterIds") else ""))
+print("  Image ............ %s" % b["image"])
+print("  Start command .... leave empty (the image entrypoint reads the env below)")
+print("  Container disk ... %d GB" % b["disk"])
+print("  Storage .......... + Add volume: your Global Volume, mount path /workspace; no Network Volume")
+print("  Expose ports ..... HTTP 8000" + (", TCP 22" if "22/tcp" in b["ports"] else ""))
+print("  Env (Raw editor, one per line):")
+for k, v in b["env"].items():
+    print("    %s=%s" % (k, v))
+'
+  echo
+  echo "Then: make verify, make wait-ready, make check (they find the Pod by its name)."
+  echo "DRY RUN: nothing was created. The API cannot attach a Global Volume, so --yes is refused with STORAGE=global."
+  exit 0
+fi
 
 echo "Pod to create: $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter $DC | volume $VOLUME on /workspace | disk ${DISK} GB | ssh $([ "$SSH" = 1 ] && echo on || echo off) | $([ "$ONLINE" = 1 ] && echo "downloads allowed (HF_TOKEN secret)" || echo "offline mode")"
 printf '%s' "$body" | python3 -m json.tool | sed 's/^/  /'

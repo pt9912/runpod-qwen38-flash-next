@@ -9,6 +9,8 @@
 #   POD_ID              default: the single active pool Pod, else RUNPOD_POD_ID (the chosen Pod and why
 #                       are printed)
 #   EXPECTED_VOLUME_ID  default: NETWORK_VOLUME_ID (optional: without it the volume is not compared)
+#   STORAGE, HF_HOME_DIR, VLLM_CACHE_DIR   as for create-pod.sh (scripts/_storage.sh). With STORAGE=global
+#                       the Global Volume itself cannot be checked: the API does not report it.
 #   VERIFY_TRIES / VERIFY_DELAY   how often / how long apart the Pod is read (default 3 / 2 s)
 # Exit codes: 0 = no FAIL (warnings allowed), 1 = at least one FAIL (the Pod is not what was intended),
 #             2 = bad arguments, 6 = the Pod could not be read even after retries, or its response had
@@ -21,6 +23,8 @@ HERE="$(dirname "$0")"
 source "$HERE/_api.sh"
 # shellcheck source=scripts/_pool.sh
 source "$HERE/_pool.sh"
+# shellcheck source=scripts/_storage.sh
+source "$HERE/_storage.sh"
 
 pool_resolve_pod "${1:-}"; rc=$?
 if [ "$rc" -eq 2 ]; then
@@ -34,6 +38,7 @@ case "$POD_ID" in *[!a-z0-9]*|"") echo "Invalid Pod ID '$POD_ID' (expected lower
 echo "Verifying Pod $POD_ID (source: $RESOLVED_SOURCE)"
 
 VOLUME="${EXPECTED_VOLUME_ID:-${NETWORK_VOLUME_ID:-}}"
+export STORAGE HF_HOME_DIR VLLM_CACHE_DIR
 
 # Reading is safe to repeat: one network hiccup must not be read as "the Pod is wrong".
 tries="${VERIFY_TRIES:-3}"; delay="${VERIFY_DELAY:-2}"; n=0
@@ -84,8 +89,13 @@ try:
       fail("GPU is %r x %r, expected %dx %r" % (g.get("count"), got_id, want_n, want_gpu))
 
   # Network Volume (the important one: a silently dropped volume means no model on the Pod)
+  storage = os.environ.get("STORAGE") or "network"
   nets = ((p.get("mounts") or {}).get("network")) or []
-  if not nets:
+  if storage == "global":
+      warn("STORAGE=global: the API does not report Global Volumes, so whether one is attached is NOT checked (the log shows it: the model directory must exist)")
+      if nets:
+          warn("a Network Volume (%s) is attached as well: it binds the Pod to its datacenter" % nets[0].get("volumeId"))
+  elif not nets:
       fail("no Network Volume is mounted (mounts=%s): the model would be missing" % json.dumps(p.get("mounts")))
   else:
       n = nets[0]
@@ -112,8 +122,15 @@ try:
       fail("VLLM_API_KEY holds a literal value, not a RunPod Secret reference (the key would be stored in the Pod definition)")
   if env.get("HF_HUB_OFFLINE") == "1" and "HF_TOKEN" in env:
       warn("HF_TOKEN is set although HF_HUB_OFFLINE=1 (not needed offline)")
-  if env.get("HF_HOME") != "/workspace/huggingface" or env.get("VLLM_CACHE_ROOT") != "/workspace/vllm-cache":
-      warn("HF_HOME / VLLM_CACHE_ROOT do not point to /workspace (caches would not persist)")
+  want_hf, want_vc = os.environ["HF_HOME_DIR"], os.environ["VLLM_CACHE_DIR"]
+  if env.get("HF_HOME") != want_hf or env.get("VLLM_CACHE_ROOT") != want_vc:
+      warn("HF_HOME / VLLM_CACHE_ROOT are %r / %r, expected %r / %r" % (env.get("HF_HOME"), env.get("VLLM_CACHE_ROOT"), want_hf, want_vc))
+  if storage == "global":
+      for key in ("HF_HOME", "HF_HUB_CACHE", "VLLM_CACHE_ROOT"):
+          if str(env.get(key, "")).startswith("/workspace"):
+              fail("env: %s=%r is on the Global Volume (no file locks, no atomic rename): caches belong on the container disk" % (key, env.get(key)))
+      if not str(env.get("MODEL", "")).startswith("/"):
+          fail("env: MODEL=%r is a Hugging Face id: with STORAGE=global it must be the directory on the Global Volume" % env.get("MODEL"))
 
   # vLLM settings: the image entrypoint (serve-b200) reads them from the environment, so there is
   # no cmd to inspect. A set cmd would be an unintended override of that entrypoint.

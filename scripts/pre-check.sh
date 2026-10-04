@@ -53,11 +53,24 @@ fi
 
 echo
 echo "== Configuration =="
-if [ -n "${NETWORK_VOLUME_ID:-}" ]; then
-  ok "NETWORK_VOLUME_ID is set"
-else
-  warn "NETWORK_VOLUME_ID is not set (needed by create-pod.sh and start-any.sh to create Pods; put it in .env)"
-fi
+case "${STORAGE:-network}" in
+  network)
+    if [ -n "${NETWORK_VOLUME_ID:-}" ]; then
+      ok "NETWORK_VOLUME_ID is set"
+    else
+      warn "NETWORK_VOLUME_ID is not set (needed by create-pod.sh and start-any.sh to create Pods; put it in .env)"
+    fi
+    ;;
+  global)
+    ok "STORAGE=global: model on a Global Volume, caches on the container disk; new Pods are created in the web console"
+    case "${MODEL:-}" in
+      /*) ok "MODEL is a local directory" ;;
+      *) fail "STORAGE=global needs MODEL=<directory on the Global Volume>, e.g. /workspace/models/qwen3.8-flash-next-nvfp4" ;;
+    esac
+    [ -z "${NETWORK_VOLUME_ID:-}" ] || warn "NETWORK_VOLUME_ID is set but STORAGE=global does not use it"
+    ;;
+  *) fail "STORAGE must be 'network' or 'global' (is '${STORAGE}')" ;;
+esac
 
 if [ "$ONLINE" -eq 1 ]; then
   echo

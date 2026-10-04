@@ -16,14 +16,15 @@ Cloud, Rechenzentrum CA-MTL-3). Alles andere stammt aus Dokumentation oder ist u
 4. [Ersteinrichtung](#ersteinrichtung)
 5. [Einstellungen (`.env`)](#einstellungen-env)
 6. [Network Volume](#network-volume)
-7. [Anlegen, prüfen, testen](#anlegen-prüfen-testen)
-8. [Alltag: starten, stoppen, löschen](#alltag-starten-stoppen-löschen)
-9. [Logs und Fehlersuche](#logs-und-fehlersuche)
-10. [Speicher, Kontext und Parallelität](#speicher-kontext-und-parallelität)
-11. [GPUs und was validiert wurde](#gpus-und-was-validiert-wurde)
-12. [Claude Code](#claude-code)
-13. [Der Pod-Pool](#der-pod-pool)
-14. [Eigenes Image bauen](#eigenes-image-bauen)
+7. [Global Volume (Beta, ungetestet)](#global-volume-beta-ungetestet)
+8. [Anlegen, prüfen, testen](#anlegen-prüfen-testen)
+9. [Alltag: starten, stoppen, löschen](#alltag-starten-stoppen-löschen)
+10. [Logs und Fehlersuche](#logs-und-fehlersuche)
+11. [Speicher, Kontext und Parallelität](#speicher-kontext-und-parallelität)
+12. [GPUs und was validiert wurde](#gpus-und-was-validiert-wurde)
+13. [Claude Code](#claude-code)
+14. [Der Pod-Pool](#der-pod-pool)
+15. [Eigenes Image bauen](#eigenes-image-bauen)
 
 ## Architektur
 
@@ -125,13 +126,15 @@ Alles optional, wenn nicht anders markiert. Ein in der Shell exportierter Wert s
 |---|---|---|
 | `RUNPOD_API_KEY` | – (nötig) | RunPod-API-Key |
 | `VLLM_API_KEY` | – (nötig) | Key, den vLLM erzwingt; gleicher Wert wie das RunPod-Secret |
-| `NETWORK_VOLUME_ID` | – (nötig zum Anlegen) | ID deines Network Volumes |
+| `NETWORK_VOLUME_ID` | – (nötig zum Anlegen) | ID deines Network Volumes (bei `STORAGE=global` unbenutzt) |
+| `STORAGE` | `network` | `global`: Modell auf einem Global Volume, Caches auf der Container-Disk; siehe [Global Volume](#global-volume-beta-ungetestet) |
+| `HF_HOME_DIR` / `VLLM_CACHE_DIR` | unter `/workspace` (network), unter `/root/.cache` (global) | Hugging-Face-Verzeichnis und vLLM-Cache im Pod |
 | `REMOTE_IMAGE` | – (nötig zum Anlegen) | Pod-Image, am besten per Digest. Das arm64/sm121-Image der DGX Spark wird abgewiesen |
 | `RUNPOD_POD_ID` | – | Ausweich-Pod für Einzel-Pod-Skripte; der aktive Pool-Pod gewinnt |
 | `QWEN_URL` | – | Endpunkt-URL, wenn kein Pod aufgelöst wird (Claude Code, `wait-ready`) |
 | `GPU_ID` | `NVIDIA B200` | exakte ID aus `make gpu`. In `.env` in Anführungszeichen, wenn sie Leerzeichen hat |
 | `GPU_COUNT` | `1` | GPUs je Pod; setzt TP. **Bei 1 bleiben** (siehe GPUs) |
-| `DATACENTER` | Rechenzentrum des Volumes | wo der Pod laufen soll |
+| `DATACENTER` | Rechenzentrum des Volumes (beliebig bei `STORAGE=global`) | wo der Pod laufen soll |
 | `CONTAINER_DISK_GB` | `50` | Container-Disk (das Image hat entpackt etwa 20 GB) |
 | `MODEL` | `starkweatherdigital/qwen3.8-flash-next-nvfp4` | HF-ID oder lokales Verzeichnis (nötig bei `PLE_MMAP=1`) |
 | `MAX_MODEL_LEN` | `131072` | Kontext je Anfrage; die Grenze des Modells ist 262144 |
@@ -174,6 +177,63 @@ stehen beim Anlegen fest; um eine zu ändern, den Pod löschen und neu anlegen.
   gelöscht ist.
 - **Ein Pod gleichzeitig:** Zwei Pods mit demselben Volume teilen sich `/workspace/vllm-cache`; die
   Pool-Schutzmechanismen lehnen einen zweiten aktiven Pool-Pod ab.
+
+## Global Volume (Beta, ungetestet)
+
+**Noch nicht ausprobiert.** Alles hier stammt aus der Dokumentation von RunPod (geprüft am 2026-10-04)
+und aus Trockenläufen dieses Repos; noch kein Pod hat das Modell von einem Global Volume geladen.
+
+Ein Global Volume ist an kein Rechenzentrum gebunden: Ein Pod in jedem Rechenzentrum kann es einbinden,
+also reicht irgendwo eine freie GPU. Mit `STORAGE=global` liegt darauf **nur das Modell**; die Caches von
+Hugging Face und vLLM bleiben auf der Container-Disk. Ohne Network Volume bindet nichts den Pod an ein
+Rechenzentrum.
+
+- **Warum die Caches auf der Container-Disk bleiben:** Ein Global Volume ist Objektspeicher ohne
+  File-Locks, atomares Umbenennen und Hardlinks, die Downloads und der Compile-Cache brauchen. Der Cache
+  spart je neuem Pod nur etwa eine Minute (Compile und Autotune; siehe [Startzeiten](startup-times.de.md)),
+  das Lesen der Gewichte dauert 8 bis 11.
+- **Preis:** 0,09 $/GB und Monat für das, was gespeichert ist (keine Größe zu buchen), plus Requests:
+  0,005 $ je 1.000 Schreib- und List-Zugriffe, 0,0005 $ je 1.000 Lesezugriffe. Das Modell (etwa 110 GB)
+  kostet etwa 9,90 $ im Monat. Einmal lesen sind je nach Blockgröße etwa 14.000 bis 110.000 Requests:
+  deutlich unter 10 Cent.
+- **Die API kann es nicht einbinden.** Weder REST v2 noch v1 hat ein Feld für ein Global Volume (in beiden
+  OpenAPI-Specs am 2026-10-04 geprüft). Volume und Pod entstehen daher **in der Web-Konsole**;
+  `make create` gibt die einzutragenden Werte aus, `--yes` wird abgelehnt. `make start` startet dann nur
+  vorhandene Pool-Pods neu. Alles, was einen vorhandenen Pod liest oder startet, funktioniert wie gewohnt:
+  `make verify`, `wait-ready`, `check`, `stop`, `pod-start`, `logs`.
+- **Fällt das Guthaben auf 0 $**, wird das Volume markiert und nach 15 Tagen gelöscht.
+
+**Einrichten:**
+
+1. Konsole: Storage > New volume > **Global volume**, Name `qwen3.8-flash-next`.
+2. Einmal befüllen. Global Volumes hängen nur an GPU-Pods, also den billigsten GPU-Pod mit einem normalen
+   PyTorch-Template, **150 GB Container-Disk** und dem Global Volume auf `/workspace` starten. Im Terminal:
+   ```bash
+   pip install -U "huggingface_hub[hf_xet]"
+   export HF_HOME=/root/hf HF_XET_HIGH_PERFORMANCE=1   # dazu HF_TOKEN, falls das Repo danach fragt
+   hf download starkweatherdigital/qwen3.8-flash-next-nvfp4 \
+     --revision 1b304e5f99de0faaf43c3a959f2b4000294bf65c --local-dir /root/model
+   rm -rf /root/model/.cache                            # Verwaltungsdaten des Downloads, nicht Teil des Modells
+   mkdir -p /workspace/models
+   cp -r /root/model /workspace/models/qwen3.8-flash-next-nvfp4
+   du -sh /workspace/models/qwen3.8-flash-next-nvfp4    # etwa 102 GiB
+   ```
+   Der Download geht zuerst auf die Container-Disk, weil er File-Locks braucht. Danach diesen Pod löschen.
+3. In `.env`:
+   ```
+   STORAGE=global
+   MODEL=/workspace/models/qwen3.8-flash-next-nvfp4
+   ```
+   `NETWORK_VOLUME_ID` wird nicht gebraucht. `make precheck` prüft die Kombination.
+4. `make create` (ohne `--yes`) gibt Pod-Name, GPU, Image, Disk, Port und alle Env-Variablen aus. Diese in
+   der Konsole eintragen (Pods > Deploy, Secure Cloud, das Global Volume auf `/workspace`, kein Network
+   Volume, Start-Command leer). Der Name muss mit `POOL_PREFIX` beginnen, sonst findet kein Skript den Pod.
+5. `make verify`, dann `make wait-ready` und `make check`. `verify` sieht das Global Volume nicht (die API
+   meldet es nicht) und sagt das; es schlägt fehl, wenn ein Cache-Pfad auf `/workspace` zeigt.
+
+**Noch offen:** wie schnell die Gewichte von einem Global Volume laden (das Network Volume heute: etwa
+150 MB/s auf einem kalten Host), und ob `PLE_MMAP=1` gut funktioniert, wenn die PLE-Tabelle aus dem
+Objektspeicher gelesen wird.
 
 ## Anlegen, prüfen, testen
 
