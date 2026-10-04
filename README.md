@@ -32,8 +32,8 @@ What that run showed:
 - **A crashed Pod restarts vLLM in a loop and keeps billing.** Check the first minutes of `make logs` and
   stop or terminate a Pod that failed.
 
-Still not done: a B200 run (none was in stock), the Anthropic-style `/v1/messages` endpoint
-(`scripts/claude-qwen.sh`), long-context tests, and any real benchmark. The 109 GB checkpoint was
+Still not done: a B200 run (none was in stock), a full interactive Claude Code session, long-context
+tests, and any real benchmark. The 109 GB checkpoint was
 demonstrated upstream on a DGX Spark / GB10 (sm121); upstream's prebuilt arm64 image
 (`jstarkg/vllm-gb10-flashnext`) cannot run on x86 GPUs and `create-pod.sh` refuses it. BF16 KV cache on
 purpose: the recipe reports that the QSA attention rejects an FP8 main KV cache.
@@ -84,6 +84,26 @@ make gpu                                  # B200 stock; copy the exact GPU id in
 5. `make wait-ready`, `make check`, and when done `make stop`.
 
 `make help` lists every target (`start`, `stop`, `terminate`, `logs`, `wait-gpu`, ...).
+
+## Claude Code
+
+`scripts/claude-qwen.sh` runs Claude Code against the Pod. It runs on **your machine** (not through
+`make`) and needs `claude` on the PATH and `VLLM_API_KEY` in the environment:
+
+```bash
+set -a; source .env; set +a
+scripts/claude-qwen.sh            # arguments are passed on to claude
+```
+
+It finds the single active pool Pod (else `RUNPOD_POD_ID`, else `QWEN_URL`), prints which one and why,
+waits until `/v1/models` answers, then sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, the
+context size (`MAX_MODEL_LEN`) and the model aliases and execs `claude --model qwen3.8-flash-next`. It only reads;
+it never starts a Pod.
+
+Checked on 2026-10-04 against the H200 Pod: the server answers the Anthropic API (`POST /v1/messages`
+with a thinking block and text, `POST /v1/messages/count_tokens`, and a `tool_use` round trip), and the
+script resolves the Pod and sets the variables correctly (tested with a stand-in for `claude`). Not tested:
+a real interactive Claude Code session.
 
 ## Serving profile (set as environment variables on the Pod, read by `image/serve-b200.sh`)
 
