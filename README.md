@@ -34,7 +34,14 @@ make gpu                                  # B200 stock; copy the exact GPU id in
    (`make gpu`). The model is 109.23 GB (146 files, measured on Hugging Face) plus a few GB of vLLM cache;
    200 GB gives room for a second model revision or the mmap test. A volume can only be enlarged later,
    never shrunk, and it is billed (about $0.07/GB/month) even while the Pod is stopped. Put its ID in
-   `NETWORK_VOLUME_ID`; Pods are always placed in the volume's datacenter.
+   `NETWORK_VOLUME_ID`; Pods are always placed in the volume's datacenter. Or let the repo do it:
+   ```bash
+   make volume ARGS='--dc EU-RO-1'          # dry run: shows the request and the monthly cost
+   make volume ARGS='--dc EU-RO-1 --yes'    # creates it (150 GB, STANDARD) and prints NETWORK_VOLUME_ID
+   make volume ARGS=--list                  # your existing volumes
+   ```
+   It checks that the datacenter exists and supports the tier, and refuses a second volume of the same
+   name. The volume is billed until you delete it (console or API); this repo has no delete command.
 3. **Create a RunPod Secret** `VLLM_API_KEY` (the API key vLLM enforces) and, for the first download,
    a Secret `HF_TOKEN`. Put the same `VLLM_API_KEY` value in `.env`.
 4. **Dry run, then create** (the Pod bills the GPU as soon as it exists):

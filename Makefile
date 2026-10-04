@@ -50,7 +50,7 @@ ENV_MOUNT  := $(if $(wildcard $(ENV_FILE)),-v "$(ENV_FILE):/app/.env:ro",)
 PASSTHROUGH := -e RUNPOD_API_KEY -e RUNPOD_BASE_URL -e RUNPOD_POD_ID -e NETWORK_VOLUME_ID \
                -e VLLM_API_KEY -e QWEN_URL -e POOL_PREFIX -e POOL_MAX \
                -e REMOTE_IMAGE -e MODEL -e MAX_MODEL_LEN -e GPU_MEMORY_UTILIZATION -e PLE_MMAP \
-               -e GPU_ID -e DATACENTER -e CONTAINER_DISK_GB
+               -e GPU_ID -e DATACENTER -e CONTAINER_DISK_GB -e VOLUME_SIZE_GB -e VOLUME_NAME
 LOCK_FILE  := $(or $(XDG_RUNTIME_DIR),/tmp)/runpod-qwen38-make-$(shell id -u).lock
 LOG_FILE   := $(CURDIR)/.startup-times.log
 DOCKER_RUN_BASE := docker run --rm -i $(ENV_MOUNT) $(PASSTHROUGH)
@@ -61,7 +61,7 @@ LOCKED     := flock -n -E 99 "$(LOCK_FILE)"
 # .make-exit-code.NAME and re-raises it so make's own success/failure detection is unaffected.
 CAPTURE = ; rc=$$?; echo "$$rc" > "$(CURDIR)/.make-exit-code.$(1)"; exit $$rc
 
-.PHONY: help build precheck smoke gpu wait-gpu verify check logs wait-ready stop pod-stop pod-terminate \
+.PHONY: help build precheck smoke gpu volume wait-gpu verify check logs wait-ready stop pod-stop pod-terminate \
         create start pod-start start-when-free abort
 
 # Lists every target below that carries a trailing `## ...` comment, in the order they appear in
@@ -86,6 +86,8 @@ smoke: build ## Quick smoke test of the RunPod v2 API client
 	$(DOCKER_RUN) bash scripts/v2-smoke.sh$(call CAPTURE,smoke)
 gpu: build ## Show current GPU stock (ARGS='TYPE DATACENTER' to filter, e.g. ARGS='B200 EU-NL-1')
 	$(DOCKER_RUN) bash scripts/gpu-availability.sh $(ARGS)$(call CAPTURE,gpu)
+volume: build ## Network Volume: ARGS='--list', or ARGS='--dc EU-RO-1 [--yes]' to create (150 GB, billed until deleted)
+	$(DOCKER_RUN) bash scripts/create-volume.sh $(ARGS)$(call CAPTURE,volume)
 wait-gpu: build ## Poll GPU stock until the requested GPU is available
 	$(DOCKER_RUN) bash scripts/wait-for-gpu.sh $(ARGS)$(call CAPTURE,wait-gpu)
 verify: build ## Check that a Pod matches what this repo intends
