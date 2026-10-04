@@ -322,7 +322,13 @@ bereit, 2 `VLLM_API_KEY` fehlt, 127 kein `claude`.
 
 Gegen den H200-Pod geprüft: `POST /v1/messages` (Denk-Block plus Text), `POST /v1/messages/count_tokens` und
 ein `tool_use`-Durchlauf funktionieren; die Pod-Auflösung und die Variablen des Skripts wurden mit einem
-Platzhalter für `claude` getestet. **Nicht getestet:** eine echte interaktive Claude-Code-Sitzung.
+Platzhalter für `claude` getestet. **Der Betreiber hat danach eine echte Claude-Code-Sitzung gefahren** (am
+2026-10-04, die Bitte, das Repo zusammenzufassen): Sie antwortete mit Werkzeugnutzung („listed 2 directories“),
+und die Zusammenfassung stimmte zum Repo. In der Antwort rutschte dem Modell ein chinesisches Wort in einen
+deutschen Satz (eine Stichprobe, kein Maß). Im selben Zeitraum protokollierte der Server Anfragen, die mit
+`Unexpected reasoning effort high` abgelehnt wurden (siehe Fehlersuche); die Sitzung antwortete trotzdem, und ob
+Claude Code ohne den Wert neu angefragt hat oder ob es Hintergrundaufrufe waren, ist nicht bekannt. Image `:3`
+entfernt die Ablehnungen. **Nicht getestet:** längere Sitzungen.
 
 ## Der Pod-Pool
 

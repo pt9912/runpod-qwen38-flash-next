@@ -32,7 +32,7 @@ What that run and the failed attempts showed:
 - **A crashed Pod restarts vLLM in a loop and keeps billing.** Check the first minutes of `make logs`.
 - **The model's context limit is 262,144 tokens.** The model card documents YaRN scaling up to 1M tokens (see the guide); it is untested with this build.
 
-Not done: a B200 run (none was in stock), a real interactive Claude Code session, anything above the native
+Not done: a B200 run (none was in stock), a longer interactive Claude Code session, anything above the native
 262,144 tokens (YaRN) and any real benchmark. The upstream arm64 image (`jstarkg/vllm-gb10-flashnext`) cannot run on x86 GPUs;
 `create-pod.sh` refuses it. The KV cache stays BF16 on purpose (the recipe reports that the attention
 layers reject FP8).
@@ -79,7 +79,7 @@ scripts/claude-qwen.sh            # arguments go to claude
 ```
 
 It resolves the active Pod, waits for the endpoint and sets the Anthropic variables. It never starts a Pod.
-Checked with a stand-in for `claude`; a real interactive session is untested. Details in the
+Checked with a stand-in for `claude`, and the owner ran one real session on 2026-10-04 (a request to summarise the repo, answered with tool use). Longer sessions are untested. Details in the
 [guide](docs/guide.md#claude-code).
 
 ## Documentation

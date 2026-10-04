@@ -35,7 +35,7 @@ Was dieser Lauf und die fehlgeschlagenen Versuche gezeigt haben:
   `make logs` ansehen.
 - **Die Kontextgrenze des Modells ist 262.144 Tokens.** Die Modellkarte beschreibt YaRN-Skalierung bis 1M Tokens (siehe Anleitung); mit diesem Build ungetestet.
 
-Nicht erledigt: ein B200-Lauf (keine war frei), eine echte interaktive Claude-Code-Sitzung, alles über den nativen
+Nicht erledigt: ein B200-Lauf (keine war frei), eine längere interaktive Claude-Code-Sitzung, alles über den nativen
 262.144 Tokens (YaRN) und jeder echte Benchmark. Das arm64-Image von Upstream (`jstarkg/vllm-gb10-flashnext`) läuft nicht auf
 x86-GPUs; `create-pod.sh` weist es ab. Der KV-Cache bleibt absichtlich BF16 (das Rezept meldet, dass die
 Aufmerksamkeitsschichten FP8 ablehnen).
@@ -82,7 +82,7 @@ scripts/claude-qwen.sh            # Argumente gehen an claude
 ```
 
 Es löst den aktiven Pod auf, wartet auf den Endpunkt und setzt die Anthropic-Variablen. Es startet nie einen
-Pod. Mit einem Platzhalter für `claude` geprüft; eine echte interaktive Sitzung ist ungetestet. Details in der
+Pod. Mit einem Platzhalter für `claude` geprüft, und der Betreiber hat am 2026-10-04 eine echte Sitzung gefahren (die Bitte, das Repo zusammenzufassen, mit Werkzeugnutzung beantwortet). Längere Sitzungen sind ungetestet. Details in der
 [Anleitung](docs/guide.de.md#claude-code).
 
 ## Dokumentation

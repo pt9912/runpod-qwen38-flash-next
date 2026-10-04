@@ -311,7 +311,12 @@ only reads; it never starts a Pod. Exit codes: 1 no Pod or never ready, 2 `VLLM_
 
 Checked against the H200 Pod: `POST /v1/messages` (a thinking block plus text), `POST
 /v1/messages/count_tokens`, and a `tool_use` round trip all work; the script's Pod resolution and variables
-were tested with a stand-in for `claude`. **Not tested:** a real interactive Claude Code session.
+were tested with a stand-in for `claude`. **The owner then ran one real Claude Code session** on 2026-10-04
+(a request to summarise the repo): it answered, with tool use ("listed 2 directories"), and the summary matched
+the repo. In that answer the model slipped a Chinese word into a German sentence (one sample, not a measure).
+During the same period the server logged requests rejected with `Unexpected reasoning effort high` (see
+Troubleshooting); the session still answered, and whether Claude Code retried without the value or those were
+background calls is not known. Image `:3` removes the rejections. **Not tested:** longer sessions.
 
 ## The Pod pool
 
