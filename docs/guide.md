@@ -135,6 +135,7 @@ All optional unless marked. A value exported in your shell wins over the same na
 | `MODEL` | `starkweatherdigital/qwen3.8-flash-next-nvfp4` | HF id, or a local directory (required with `PLE_MMAP=1`) |
 | `MAX_MODEL_LEN` | `131072` | context per request; the model's limit is 262144 |
 | `MAX_NUM_SEQS` | `16` | concurrent sequences (1 to 256) |
+| `YARN_FACTOR` | – | static YaRN factor (`4.0` up to 1M, `2.0` for 524288) to go beyond 262144; needs `MAX_MODEL_LEN` above 262144 and at most 262144 x factor. **Untested.** Needs an image built with this change (older tags ignore it) |
 | `GPU_MEMORY_UTILIZATION` | `0.90` | vLLM's GPU memory share |
 | `PLE_MMAP` | `0` | `1` serves the 26.8 GiB PLE table from disk; **required on 141 GB or less** |
 | `VLLM_EXTRA_ARGS` | – | extra `vllm serve` arguments, word-split, appended last |

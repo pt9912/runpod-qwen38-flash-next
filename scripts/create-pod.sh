@@ -31,6 +31,8 @@
 #   MAX_MODEL_LEN       default: 131072; GPU_MEMORY_UTILIZATION default 0.90
 #   MAX_NUM_SEQS        default: 16: concurrent sequences. The KV cache holds a fixed number of tokens, so
 #                       MAX_NUM_SEQS x MAX_MODEL_LEN should not exceed it (vLLM prints "Maximum concurrency")
+#   YARN_FACTOR         optional: static YaRN factor (4.0 for 1M, 2.0 for 524288) to go beyond the native
+#                       262144; needs MAX_MODEL_LEN above 262144 and <= 262144 x factor. Unset = no scaling
 #   PLE_MMAP            default 0; 1 needs MODEL=<local dir> and is not validated on B200
 #
 # Exit codes: 0 = dry run done, or Pod created and verified; 1 = failure, or the Pod was created
@@ -124,6 +126,12 @@ case "$CTX" in ''|*[!0-9]*) echo "MAX_MODEL_LEN must be a whole number" >&2; exi
 SEQS="${MAX_NUM_SEQS:-16}"
 case "$SEQS" in ''|*[!0-9]*) echo "MAX_NUM_SEQS must be a whole number" >&2; exit 2 ;; esac
 { [ "$SEQS" -ge 1 ] && [ "$SEQS" -le 256 ]; } || { echo "MAX_NUM_SEQS must be between 1 and 256" >&2; exit 2; }
+YARN="${YARN_FACTOR:-}"
+if [ -n "$YARN" ]; then
+  case "$YARN" in ''|*[!0-9.]*|*.*.*|.*|*.|0*) echo "YARN_FACTOR must be a number such as 2.0 or 4.0" >&2; exit 2 ;; esac
+  python3 -c 'import sys; f, c = float(sys.argv[1]), int(sys.argv[2]); sys.exit(0 if f > 1 and 262144 < c <= 262144 * f else 1)' "$YARN" "$CTX" \
+    || { echo "YARN_FACTOR=$YARN needs a factor above 1 and MAX_MODEL_LEN between 262145 and 262144 x factor (now $CTX)" >&2; exit 2; }
+fi
 MMAP="${PLE_MMAP:-0}"
 case "$MMAP" in 0|1) ;; *) echo "PLE_MMAP must be 0 or 1" >&2; exit 2 ;; esac
 if [ "$MMAP" = 1 ]; then
@@ -133,7 +141,7 @@ if [ "$MMAP" = 1 ]; then
   esac
 fi
 body="$(POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" GPU_COUNT="$GPU_COUNT" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
-  IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" SEQS="$SEQS" MMAP="$MMAP" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
+  IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" SEQS="$SEQS" MMAP="$MMAP" YARN="$YARN" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
   VSEC="${VLLM_SECRET_NAME:-VLLM_API_KEY}" HSEC="${HF_SECRET_NAME:-HF_TOKEN}" python3 -c '
 import json, os
 e = os.environ
@@ -157,6 +165,8 @@ env = {
     "MMAP": e["MMAP"],
     "PREWARM": e["MMAP"],
 }
+if e.get("YARN"):
+    env["YARN_FACTOR"] = e["YARN"]
 if e.get("VLLM_EXTRA_ARGS"):
     env["VLLM_EXTRA_ARGS"] = e["VLLM_EXTRA_ARGS"]
 if e["ONLINE"] == "1":

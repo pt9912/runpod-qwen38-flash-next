@@ -132,6 +132,11 @@ try:
           ok("env: %s=%s (%s)" % (key, want, what))
       else:
           level("env: %s is %r, expected %r (%s)" % (key, env.get(key), want, what))
+  want_yarn = os.environ.get("YARN_FACTOR") or None
+  if env.get("YARN_FACTOR") != want_yarn:
+      fail("env: YARN_FACTOR is %r, expected %r (static YaRN factor)" % (env.get("YARN_FACTOR"), want_yarn))
+  elif want_yarn:
+      warn("YARN_FACTOR=%s: static YaRN is untested with this build and can hurt short texts" % want_yarn)
   if env.get("TP") != str(want_n):
       fail("env: TP is %r, expected %r (one tensor-parallel rank per GPU)" % (env.get("TP"), str(want_n)))
   want_cvd = ",".join(str(i) for i in range(want_n))

@@ -12,6 +12,7 @@ CACHE="${CACHE:-1}"
 MMAP="${MMAP:-0}"
 PREWARM="${PREWARM:-0}"
 TP="${TP:-1}"                       # tensor-parallel size = number of GPUs on the Pod
+YARN_FACTOR="${YARN_FACTOR:-}"      # static YaRN factor (4.0 for 1M, 2.0 for 524288); empty = native 262144
 
 export VLLM_PLE_NVFP4=1
 export VLLM_PLE_NVFP4_MMAP="$MMAP"
@@ -54,6 +55,13 @@ fi
 if [ "$MMAP" = 1 ]; then
   SPLIT='["vllm::unified_attention_with_output","vllm::unified_mla_attention_with_output","vllm::mamba_mixer2","vllm::mamba_mixer","vllm::short_conv","vllm::qwen3_8_flash_next_ple_short_conv","vllm::qwen3_8_flash_next_qsa_with_output","vllm::linear_attention","vllm::qwen_gdn_attention_core","vllm::qwen_gdn_attention_core_fused_norm_packed","vllm::sparse_attn_indexer","vllm::ple_nvfp4_mmap_lookup"]'
   args+=(--compilation-config "{\"cudagraph_mode\":\"PIECEWISE\",\"cudagraph_capture_sizes\":[1,2,4,8,16],\"splitting_ops\":$SPLIT}")
+fi
+
+# Static YaRN (model card): extends the context beyond the native 262144. Needs MAX_MODEL_LEN (CTX) above
+# 262144. The card warns that static YaRN can hurt short texts, so it is only set when requested.
+if [ -n "$YARN_FACTOR" ]; then
+  export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+  args+=(--hf-overrides "{\"text_config\":{\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":$YARN_FACTOR,\"original_max_position_embeddings\":262144,\"rope_theta\":10000000,\"partial_rotary_factor\":0.25,\"mrope_interleaved\":true,\"mrope_section\":[11,11,10]}}}")
 fi
 
 # Optional extra vLLM arguments (word-split on purpose), appended last so they can override.

@@ -135,6 +135,7 @@ Alles optional, wenn nicht anders markiert. Ein in der Shell exportierter Wert s
 | `CONTAINER_DISK_GB` | `50` | Container-Disk (das Image hat entpackt etwa 20 GB) |
 | `MODEL` | `starkweatherdigital/qwen3.8-flash-next-nvfp4` | HF-ID oder lokales Verzeichnis (nötig bei `PLE_MMAP=1`) |
 | `MAX_MODEL_LEN` | `131072` | Kontext je Anfrage; die Grenze des Modells ist 262144 |
+| `YARN_FACTOR` | – | statischer YaRN-Faktor (`4.0` bis 1M, `2.0` für 524288), um über 262144 hinauszugehen; braucht `MAX_MODEL_LEN` über 262144 und höchstens 262144 × Faktor. **Ungetestet.** Braucht ein Image mit dieser Änderung (ältere Tags ignorieren sie) |
 | `MAX_NUM_SEQS` | `16` | gleichzeitige Sequenzen (1 bis 256) |
 | `GPU_MEMORY_UTILIZATION` | `0.90` | Anteil des GPU-Speichers für vLLM |
 | `PLE_MMAP` | `0` | `1` liest die 26,8 GiB große PLE-Tabelle von der Platte; **nötig bei 141 GB oder weniger** |
