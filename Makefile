@@ -12,6 +12,11 @@
 # it, and a `docker run --rm` container's own filesystem (and anything written to it) is discarded
 # on exit, so without this mount the log would never survive past a single run.
 #
+# `make gpu` is the one exception to "make fails when the script fails": the script's exit 2 means
+# "known GPU, no stock", which is an answer, not an error, so make exits 0 there (no "*** Error 2"
+# noise). The real code (2) is still written to .make-exit-code.gpu, so `make gpu; cat
+# .make-exit-code.gpu` tells "in stock" (0) from "none" (2). Real errors (1 API, 4 typo) still fail.
+#
 # Exit codes: GNU Make itself always exits 0 (success) or 2 (any recipe failure) -- verified, it
 # does NOT preserve a recipe's actual exit code -- so the fine-grained codes documented in the
 # README.md (5, 6, 8, 9, ...) are not visible in `$?` after a `make` invocation. Every target writes
@@ -85,7 +90,8 @@ precheck: build ## Check tools, environment and local files (ARGS=--online adds 
 smoke: build ## Quick smoke test of the RunPod v2 API client
 	$(DOCKER_RUN) bash scripts/v2-smoke.sh$(call CAPTURE,smoke)
 gpu: build ## Show current GPU stock (ARGS='TYPE DATACENTER' to filter, e.g. ARGS='B200 EU-NL-1')
-	$(DOCKER_RUN) bash scripts/gpu-availability.sh $(ARGS)$(call CAPTURE,gpu)
+	$(DOCKER_RUN) bash scripts/gpu-availability.sh $(ARGS); rc=$$?; echo "$$rc" > "$(CURDIR)/.make-exit-code.gpu"; \
+	  [ "$$rc" -ne 2 ] || exit 0; exit "$$rc"
 volume: build ## Network Volume: ARGS='--list', or ARGS='--dc EU-RO-1 [--yes]' to create (150 GB, billed until deleted)
 	$(DOCKER_RUN) bash scripts/create-volume.sh $(ARGS)$(call CAPTURE,volume)
 wait-gpu: build ## Poll GPU stock until the requested GPU is available

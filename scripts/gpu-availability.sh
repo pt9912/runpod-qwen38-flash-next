@@ -11,7 +11,7 @@
 #                  "any" always means the overall stock (all datacenters).
 #
 # Exit codes: 0 = in stock (in the given datacenter, if any), 2 = known GPU but no
-# stock, 4 = unknown GPU type or datacenter (typo?), 1 = API/transport error.
+# stock (a normal answer; `make gpu` maps it to success, see the Makefile), 4 = unknown GPU type or datacenter (typo?), 1 = API/transport error.
 set -euo pipefail
 : "${RUNPOD_API_KEY:?Set RUNPOD_API_KEY}"
 # shellcheck source=scripts/_api.sh
@@ -56,7 +56,7 @@ response="$(api_get "/catalog/gpus?include=AVAILABILITY&product=POD")"
 
 printf '%s' "$response" | python3 -c '
 import json, sys
-match, dc = sys.argv[1].lower(), sys.argv[2].lower()
+shown, match, dc = sys.argv[1], sys.argv[1].lower(), sys.argv[2].lower()
 data = json.load(sys.stdin)
 gpus = data.get("gpus", data) if isinstance(data, dict) else data
 exact = [g for g in gpus if match in (g["id"].lower(), g["name"].lower())]
@@ -86,5 +86,10 @@ for g in hits:
                 print("    %-12s %s" % (d["id"], d["availability"]))
     else:
         print("    no stock" + (" in this datacenter" if dc else " in any datacenter"))
+if not in_stock:
+    print("")
+    print("No %s in stock %s right now. That is a normal answer, not a failure; stock changes and is" % (shown, ("in " + dc.upper()) if dc else "anywhere"))
+    print("only a hint. To be told when one is free (starts and bills nothing):")
+    print("    make wait-gpu ARGS=\"%s%s\"" % (shown, " " + dc.upper() if dc else ""))
 sys.exit(0 if in_stock else 2)
 ' "$MATCH" "$DC"
