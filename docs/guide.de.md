@@ -229,6 +229,7 @@ und rechnet weiter ab.** Lies die ersten Minuten des Logs und stoppe oder lösch
 | `no capacity` (Exit 5) | im Rechenzentrum des Volumes ist keine GPU frei | `make wait-gpu`, dann wiederholen; nichts wurde abgerechnet |
 | `make check`: mit deinem Key HTTP 401 | das Secret `VLLM_API_KEY` des Pods fehlt oder weicht von `.env` ab | Secret mit gleichem Wert anlegen, Pod neu anlegen |
 | HTTP 403, Inhalt `error code: 1010`, vom eigenen Python- oder anderen Client | der RunPod-Proxy (Cloudflare) blockt den Standard-User-Agent von Python; `curl` wird nicht geblockt | einen anderen `User-Agent`-Header setzen, zum Beispiel `curl/8.5.0` |
+| HTTP 400 `Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low` | die Chat-Vorlage des Modells lehnt `reasoning_effort`-Werte außer xhigh, medium und low ab; viele Clients senden `high` (am 2026-10-04 beim Image `:2` gesehen) | Image `:3` nutzen (dessen Entrypoint liefert eine angepasste Vorlage, die high und max auf xhigh und minimal auf low abbildet), oder xhigh, medium oder low senden |
 | `unknown datacenter 'PRO'` bei `make gpu` | ein GPU-Name mit Leerzeichen wurde zerlegt | in Anführungszeichen: `ARGS='"RTX PRO 6000"'` |
 | `Datacenter X does not support Network Volumes` | nicht jedes Rechenzentrum hat Volumes | ein anderes wählen (`make volume` prüft vorher) |
 | `Unknown vLLM environment variable VLLM_PLE_NVFP4*` | die Variablen gehören dem Patch, nicht vLLM | harmlos |
@@ -353,4 +354,5 @@ docker push docker.io/DU/vllm-qwen38-b200:3        # danach REMOTE_IMAGE per Dig
 Die Basis ist das linux/amd64-Manifest von `vllm/vllm-openai:qwen38-flash-next`, per Digest festgelegt. Der
 Rezept-Commit ist ebenfalls festgelegt. Der Build wendet die Patches 20, 30, 35, 40 und 41 an und scheitert,
 wenn deren Marker fehlen. Patch 10 (ein sm121-Marlin-Workaround) wird absichtlich übersprungen. Das
-veröffentlichte Image ist `pt9912/vllm-qwen38-b200:2` (Digest in `.env.example`).
+veröffentlichte Image ist `pt9912/vllm-qwen38-b200:3` (Digest in `.env.example`); `:2` ist das der validierten Läufe,
+`:3` ergänzt die Chat-Vorlagen-Korrektur und lief noch nicht auf einem Pod.

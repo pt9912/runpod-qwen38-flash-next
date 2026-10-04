@@ -10,8 +10,8 @@ IMAGE=docker.io/YOU/vllm-qwen38-b200:1 ./build.sh
 docker push docker.io/YOU/vllm-qwen38-b200:1      # then pin REMOTE_IMAGE by digest in ../.env
 ```
 
-Published build: `docker.io/pt9912/vllm-qwen38-b200:2`, digest
-`sha256:4e892eef3984225001df1f57a9e7080fecd3b870469c309d9b307f3772545f76` (linux/amd64, public, 19.9 GB).
+Published build: `docker.io/pt9912/vllm-qwen38-b200:3`, digest
+`sha256:26650509c7a5ae3196e6fa40463e96db67b2858c9a5f08867aa964195d3aa96f` (linux/amd64, public, 19.9 GB).
 Built and import-tested on a CPU host only; never run on a GPU.
 
 ```bash

@@ -224,6 +224,7 @@ minutes of the log, and stop or terminate a Pod that failed.
 | `no capacity` (exit 5) | no GPU free in the volume's datacenter | `make wait-gpu`, then retry; nothing was billed |
 | `make check`: with your key HTTP 401 | the Pod's `VLLM_API_KEY` Secret is missing or differs from `.env` | create the Secret with the same value, recreate the Pod |
 | HTTP 403, body `error code: 1010`, from your own Python or other client | the RunPod proxy (Cloudflare) blocks the default Python User-Agent; `curl` is not blocked | set a different `User-Agent` header, for example `curl/8.5.0` |
+| HTTP 400 `Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low` | the model's chat template rejects `reasoning_effort` values other than xhigh, medium and low; many clients send `high` (seen on 2026-10-04 on the `:2` image) | use image `:3` (its entrypoint serves a patched template mapping high and max to xhigh, minimal to low), or send xhigh, medium or low |
 | `unknown datacenter 'PRO'` from `make gpu` | a GPU name with spaces was split | quote it: `ARGS='"RTX PRO 6000"'` |
 | `Datacenter X does not support Network Volumes` | not every datacenter has volumes | pick another (`make volume` checks first) |
 | `Unknown vLLM environment variable VLLM_PLE_NVFP4*` | the variables belong to the patch, not to vLLM | harmless |
@@ -340,4 +341,5 @@ docker push docker.io/YOU/vllm-qwen38-b200:3        # then pin REMOTE_IMAGE by d
 The base is the linux/amd64 manifest of `vllm/vllm-openai:qwen38-flash-next`, pinned by digest. The recipe
 commit is pinned too. The build applies patches 20, 30, 35, 40 and 41 and fails if their marker strings are
 missing. Patch 10 (an sm121 Marlin workaround) is skipped on purpose. The published image is
-`pt9912/vllm-qwen38-b200:2` (digest in `.env.example`).
+`pt9912/vllm-qwen38-b200:3` (digest in `.env.example`); `:2` is the one the validated runs used, `:3` adds the
+chat-template fix and has not run on a Pod yet.

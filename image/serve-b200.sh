@@ -62,4 +62,22 @@ if [ -n "${VLLM_EXTRA_ARGS:-}" ]; then
   args+=("${extra[@]}")
 fi
 
+# The model's chat template only accepts reasoning_effort xhigh (default), medium and low and raises an
+# error for "high" or "max", which many clients send. Serve a patched copy that maps high/max to xhigh and
+# minimal to low. If the template file or the expected line is not found, the model's own template is used.
+tmpl_src=""
+if [ -f "$MODEL/chat_template.jinja" ]; then
+  tmpl_src="$MODEL/chat_template.jinja"
+elif [ ! -d "$MODEL" ]; then
+  tmpl_src="$(python3 -c "from huggingface_hub import hf_hub_download as d; print(d('$MODEL', 'chat_template.jinja'))" 2>/dev/null || true)"
+fi
+if [ -n "$tmpl_src" ] && [ -f "$tmpl_src" ]; then
+  sed "s/^\(    {%- set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}\)\$/\1\n    {%- if resolved_reasoning_effort in ('high', 'max') %}{%- set resolved_reasoning_effort = 'xhigh' %}{%- elif resolved_reasoning_effort == 'minimal' %}{%- set resolved_reasoning_effort = 'low' %}{%- endif %}/" "$tmpl_src" > /tmp/chat_template.patched.jinja
+  if grep -q "in ('high', 'max')" /tmp/chat_template.patched.jinja; then
+    args+=(--chat-template /tmp/chat_template.patched.jinja)
+  else
+    echo "Note: chat template line not found; using the model's own template (reasoning_effort high will be rejected)." >&2
+  fi
+fi
+
 exec vllm serve "${args[@]}"
