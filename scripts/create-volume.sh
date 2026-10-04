@@ -147,7 +147,7 @@ echo "  It can only be enlarged later, never shrunk, and it cannot move to anoth
 
 if [ "$YES" -ne 1 ]; then
   echo
-  echo "DRY RUN: nothing was created. Add --yes to create the volume. Check the stock in $DC first: make gpu ARGS='"${GPU_ID:-B200}" $DC'"
+  echo "DRY RUN: nothing was created. Add --yes to create the volume. Check the stock in $DC first: make gpu ARGS='\"${GPU_ID:-B200}\" $DC'"
   exit 0
 fi
 
