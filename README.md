@@ -14,8 +14,9 @@ serving image (`image/`) and the model recipe come from
   DGX Spark / GB10 (sm121), **not on a B200**. Nothing in this repo has been run on one yet.
 - Upstream's prebuilt image (`jstarkg/vllm-gb10-flashnext`) is arm64/sm121 and cannot run on a B200;
   `create-pod.sh` refuses it. You build an x86_64 image from `image/` yourself.
-- `image/` has **not been built or tested** here: whether patches 20/30/35/40/41 apply to the pinned
-  amd64 base is only known after your first `image/build.sh` (the build fails if they do not).
+- `image/` builds: patches 20/30/35/40/41 apply to the pinned amd64 base and the build's marker checks pass
+  (vLLM `0.1.dev20073+g8e685d198`, torch 2.13.0+cu130). It has **never run on a GPU**: whether the NVFP4
+  kernels work on a B200 is unknown until the first start.
 - Whether the image serves the Anthropic-style `/v1/messages` (needed by `scripts/claude-qwen.sh`, which runs on your machine, not through make) is unverified.
 - BF16 KV cache on purpose: the recipe reports that the QSA attention rejects an FP8 main KV cache.
 
@@ -27,10 +28,8 @@ make precheck                             # local config + read-only API smoke t
 make gpu                                  # B200 stock; copy the exact GPU id into .env (GPU_ID) if it differs
 ```
 
-1. **Build and push the image** (see `image/README.md`), then set `REMOTE_IMAGE` (by digest) in `.env`:
-   ```bash
-   IMAGE=ghcr.io/YOU/vllm-qwen38-b200:1 image/build.sh && docker push ghcr.io/YOU/vllm-qwen38-b200:1
-   ```
+1. **Image:** a public build is on Docker Hub (`pt9912/vllm-qwen38-b200:1`); `.env.example` already pins its
+   digest as `REMOTE_IMAGE`. To build your own instead, see `image/README.md`.
 2. **Create a RunPod Secret** `VLLM_API_KEY` (the API key vLLM enforces) and, for the first download,
    a Secret `HF_TOKEN`. Put the same `VLLM_API_KEY` value in `.env`.
 3. **Dry run, then create** (the Pod bills the GPU as soon as it exists):

@@ -5,8 +5,15 @@ installs `serve-b200` as the entrypoint (it reads `MODEL`, `SERVED_MODEL_NAME`, 
 `SEQS`, `MTP`, `CACHE`, `MMAP`, `PREWARM`, which `create-pod.sh` sets on the Pod).
 
 ```bash
-IMAGE=ghcr.io/YOU/vllm-qwen38-b200:1 ./build.sh
-docker push ghcr.io/YOU/vllm-qwen38-b200:1      # then pin REMOTE_IMAGE by digest in ../.env
+IMAGE=docker.io/YOU/vllm-qwen38-b200:1 ./build.sh
+docker push docker.io/YOU/vllm-qwen38-b200:1      # then pin REMOTE_IMAGE by digest in ../.env
+```
+
+Published build: `docker.io/pt9912/vllm-qwen38-b200:1`, digest
+`sha256:6f13de2fb100914c5ea5d381bc8cdb98a9b9ceeb9df7d9435197e7fb92d974dd` (linux/amd64, public, 19.9 GB).
+Built and import-tested on a CPU host only; never run on a GPU.
+
+```bash
 ```
 
 ## Pins (defaults in `Dockerfile` and `build.sh`)
@@ -24,8 +31,8 @@ Applied: 20 (4-bit PLE loader), 30 (graph output buffer), 35 (PLE NVFP4 mmap), 4
 not inherit it). The build checks marker strings and compiles the patched files, so a base that drifted
 too far fails the build instead of at inference time.
 
-**Not yet built or run on a B200.** Expect to iterate on the first build and the first start.
-Whether the base's Marlin/NVFP4 kernels cover sm100 is unverified.
+The build succeeds (all five patches apply, marker checks pass). **Not yet run on a B200:** whether the
+base's Marlin/NVFP4 kernels cover sm100 is unverified, so expect to iterate on the first start.
 
 ## PLE mmap
 
