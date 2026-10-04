@@ -11,8 +11,9 @@ serving image (`image/`) and the model recipe come from
 ## Status
 
 **Validated once, on 2026-10-04:** 1x **H200 SXM** (Secure Cloud, CA-MTL-3) with `PLE_MMAP=1`, image
-`:2`. Startup to `Application startup complete` took about 5 minutes (the model was already on the
-volume; image pull, weights ~110 s, `torch.compile` ~50 s, CUDA graphs, FlashInfer autotune). `make check`
+`:2`. From vLLM start to `Application startup complete` it took about 5.5 minutes (08:09:31 to 08:14:57
+UTC, after the image pull; the model was already on the volume): weights ~110 s, `torch.compile` ~50 s,
+CUDA graphs, FlashInfer autotune. `make check`
 passed all five checks and two short chat requests returned coherent German answers with the reasoning
 split out (the second request ran at about 68 tokens/s end to end through the RunPod proxy; the first
 included one-time Triton JIT warm-up). This is one pod and two short requests, not a benchmark.
@@ -26,7 +27,7 @@ What that run showed:
 - **Hopper has no native FP4:** vLLM picks the Marlin weight-only NVFP4 MoE backend and warns that
   compute-heavy loads may be slower. It works.
 - **Tensor parallelism does not work with this recipe:** with `GPU_COUNT=2` the loader stops with
-  `NotImplementedError: NVIDIA PLE supports TP=1 only` (patch 20, `ple_layer.py`). 2x RTX PRO 6000 was
+  `NotImplementedError: NVFP4 PLE supports TP=1 only` (patch 20, `ple_layer.py`). 2x RTX PRO 6000 was
   tried and failed there. Use one card with enough memory.
 - **A crashed Pod restarts vLLM in a loop and keeps billing.** Check the first minutes of `make logs` and
   stop or terminate a Pod that failed.
