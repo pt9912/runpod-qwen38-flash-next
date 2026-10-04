@@ -29,6 +29,8 @@
 #   REMOTE_IMAGE        REQUIRED: the patched x86_64 vLLM image (image/), ideally pinned by digest
 #   MODEL               default: starkweatherdigital/qwen3.8-flash-next-nvfp4
 #   MAX_MODEL_LEN       default: 131072; GPU_MEMORY_UTILIZATION default 0.90
+#   MAX_NUM_SEQS        default: 16: concurrent sequences. The KV cache holds a fixed number of tokens, so
+#                       MAX_NUM_SEQS x MAX_MODEL_LEN should not exceed it (vLLM prints "Maximum concurrency")
 #   PLE_MMAP            default 0; 1 needs MODEL=<local dir> and is not validated on B200
 #
 # Exit codes: 0 = dry run done, or Pod created and verified; 1 = failure, or the Pod was created
@@ -119,6 +121,9 @@ esac
 MODEL="${MODEL:-starkweatherdigital/qwen3.8-flash-next-nvfp4}"
 CTX="${MAX_MODEL_LEN:-131072}"
 case "$CTX" in ''|*[!0-9]*) echo "MAX_MODEL_LEN must be a whole number" >&2; exit 2 ;; esac
+SEQS="${MAX_NUM_SEQS:-16}"
+case "$SEQS" in ''|*[!0-9]*) echo "MAX_NUM_SEQS must be a whole number" >&2; exit 2 ;; esac
+{ [ "$SEQS" -ge 1 ] && [ "$SEQS" -le 256 ]; } || { echo "MAX_NUM_SEQS must be between 1 and 256" >&2; exit 2; }
 MMAP="${PLE_MMAP:-0}"
 case "$MMAP" in 0|1) ;; *) echo "PLE_MMAP must be 0 or 1" >&2; exit 2 ;; esac
 if [ "$MMAP" = 1 ]; then
@@ -128,7 +133,7 @@ if [ "$MMAP" = 1 ]; then
   esac
 fi
 body="$(POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" GPU_COUNT="$GPU_COUNT" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
-  IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" MMAP="$MMAP" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
+  IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" SEQS="$SEQS" MMAP="$MMAP" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
   VSEC="${VLLM_SECRET_NAME:-VLLM_API_KEY}" HSEC="${HF_SECRET_NAME:-HF_TOKEN}" python3 -c '
 import json, os
 e = os.environ
@@ -146,7 +151,7 @@ env = {
     "CTX": e["CTX"],
     "GPU_MEM": e["GPU_MEM"],
     "TP": e["GPU_COUNT"],
-    "SEQS": "16",
+    "SEQS": e["SEQS"],
     "MTP": "1",
     "CACHE": "1",
     "MMAP": e["MMAP"],

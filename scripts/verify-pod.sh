@@ -125,6 +125,7 @@ try:
   for key, want, level, what in (("MODEL", want_model, fail, "model"),
                                  ("SERVED_MODEL_NAME", "qwen3.8-flash-next", fail, "served model name"),
                                  ("CTX", want_ctx, fail, "context length"),
+                                 ("SEQS", os.environ.get("MAX_NUM_SEQS") or "16", fail, "max concurrent sequences"),
                                  ("MTP", "1", warn, "MTP speculative decoding (1 token)"),
                                  ("CACHE", "1", warn, "prefix caching")):
       if env.get(key) == want:

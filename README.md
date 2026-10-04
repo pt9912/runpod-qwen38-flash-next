@@ -47,6 +47,12 @@ PLE_MMAP=1
 MODEL=/workspace/huggingface/hub/models--starkweatherdigital--qwen3.8-flash-next-nvfp4/snapshots/1b304e5f99de0faaf43c3a959f2b4000294bf65c
 ```
 
+Six sessions of the model's full native context (262,144 tokens each) on the same card: add
+`MAX_MODEL_LEN=262144` and `MAX_NUM_SEQS=6`. The KV cache measured on the H200 holds 1,575,594 tokens and
+6 x 262,144 = 1,572,864, so it fits with almost no reserve (vLLM then reports about 6.01x concurrency).
+The model's limit is 262,144 (`max_position_embeddings`); anything beyond that needs rope scaling, which is
+untested here. In general keep `MAX_NUM_SEQS x MAX_MODEL_LEN` at or below the KV cache size vLLM prints.
+
 The snapshot directory name is the Hugging Face revision of the checkpoint (`main` was `1b304e5f...` on
 2026-10-04). The first start of a new volume needs `make create ARGS='--yes --online'` to download the
 model with the default `MODEL` (no `PLE_MMAP`); then switch to the settings above for every later start.
