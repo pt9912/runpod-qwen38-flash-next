@@ -136,6 +136,7 @@ Alles optional, wenn nicht anders markiert. Ein in der Shell exportierter Wert s
 | `RUNPOD_POD_ID` | – | Ausweich-Pod für Einzel-Pod-Skripte; der aktive Pool-Pod gewinnt |
 | `QWEN_URL` | – | Endpunkt-URL, wenn kein Pod aufgelöst wird (Claude Code, `wait-ready`) |
 | `GPU_ID` | `NVIDIA B200` | exakte ID aus `make gpu`. In `.env` in Anführungszeichen, wenn sie Leerzeichen hat |
+| `GPU_IDS` | – | optionale Ausweichliste in Reihenfolge der Vorliebe, zum Beispiel `"NVIDIA H200,NVIDIA H200 NVL,NVIDIA B200"`: `make create` / `make start` nehmen die erste Karte mit Bestand (siehe [GPUs](#gpus-und-was-validiert-wurde)) |
 | `GPU_COUNT` | `1` | GPUs je Pod; setzt TP. **Bei 1 bleiben** (siehe GPUs) |
 | `DATACENTER` | Rechenzentrum des Volumes (beliebig bei `STORAGE=global`) | wo der Pod laufen soll |
 | `CONTAINER_DISK_GB` | `50` | Container-Disk (das Image hat entpackt etwa 20 GB) |
@@ -437,6 +438,16 @@ erwarten; ihre Spitzenrechenleistung ist 16 % niedriger, was bei sehr langen Pre
 pro Stunde, **ist aber ungetestet, und es gibt keinen Bestand**: `make wait-gpu ARGS="NVIDIA H200 NVL"` wartet auf eine, ohne etwas
 zu starten. Die B200 kostet 51 % mehr; ihr zusätzlicher Speicher könnte `PLE_MMAP` überflüssig machen und ihr natives FP4 den Prefill
 beschleunigen, nichts davon ist gemessen.
+
+**Ausweichliste (`GPU_IDS`).** Stehen mehrere Karten in `GPU_IDS`, läuft `create-pod.sh` einmal je Karte in der angegebenen
+Reihenfolge und geht nur dann zur nächsten Karte, wenn die Antwort „keine Kapazität“ lautet (Exit 5, nichts wurde angelegt); jedes
+andere Ergebnis beendet den Lauf, auf eine abgelehnte Anfrage oder einen angelegten Pod folgt also nie ein zweiter Versuch. Ohne
+`--yes` wird nur die Anfrage der ersten Karte gezeigt. `make verify` akzeptiert einen Pod auf jeder gelisteten Karte. Eine Karte,
+die mit diesem Rezept noch nie gelaufen ist (alles außer der H200 SXM), bekommt eine Warnung, und `make precheck` führt sie auf.
+Am 2026-10-10 vorbereitet und gegen eine nachgebaute API getestet (Ausweichen, nirgends Kapazität, Trockenlauf, erste Karte klappt,
+anderer Fehler bricht ab, ungültige Eingabe); **mit ihr wurde noch kein echter Pod angelegt**. Am besten passt sie zu
+`STORAGE=local`, wo kein Volume den Pod an ein Rechenzentrum bindet. Die H200 NVL und die B200 sollen je einmal ausprobiert werden,
+bevor man sich darauf als Ausweichkarte verlässt.
 
 ## Claude Code
 

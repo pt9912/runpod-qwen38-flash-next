@@ -30,6 +30,11 @@
 #   POD_NAME            default: qwen3.8-flash-next; must start with POOL_PREFIX (else no pool guard
 #                        ever sees it), unless --force
 #   GPU_ID              default: NVIDIA B200 (check the exact id with `make gpu`)
+#   GPU_IDS             optional fallback list, comma separated, in order of preference, for example
+#                       "NVIDIA H200,NVIDIA H200 NVL,NVIDIA B200": the first card with capacity is used. Done by
+#                       running this script once per card; only "no capacity" (exit 5) moves on to the next, any
+#                       other result ends the run. A card that was never run with this recipe gets a warning
+#                       (VALIDATED_GPUS below). Without --yes only the first card's request is shown.
 #   GPU_COUNT           default: 1; N>1 gives the Pod N GPUs of the same machine and runs vLLM with
 #                       tensor parallelism N (TP=N, CUDA_VISIBLE_DEVICES=0..N-1). Not validated with this recipe.
 #   VLLM_EXTRA_ARGS     optional: extra `vllm serve` arguments appended by the image entrypoint
@@ -72,6 +77,44 @@ for a in "$@"; do
   esac
 done
 
+# Cards that ran this recipe to the end (the other cards get a warning, see docs/guide.md "GPUs").
+VALIDATED_GPUS="NVIDIA H200"
+gpu_note() {   # gpu_note CARD: a one-line warning for a card that was never run with this recipe
+  case ",$VALIDATED_GPUS," in
+    *",$1,"*) ;;
+    *) echo "Note: '$1' was never run with this recipe (validated: $VALIDATED_GPUS); expect to iterate on the first start." >&2 ;;
+  esac
+}
+
+# ---- GPU fallback list: run this script once per card, in order; only "no capacity" (exit 5) moves on.
+if [ -n "${GPU_IDS:-}" ] && [ -z "${CREATE_POD_CANDIDATE:-}" ]; then
+  cands=()
+  IFS=',' read -r -a raw <<<"$GPU_IDS"
+  for c in "${raw[@]}"; do
+    c="$(printf '%s' "$c" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -z "$c" ] || cands+=("$c")
+  done
+  [ "${#cands[@]}" -gt 0 ] || { echo "GPU_IDS holds no card" >&2; exit 2; }
+  for c in "${cands[@]}"; do
+    case "$c" in *[!A-Za-z0-9\ ._-]*) echo "GPU_IDS: '$c' has characters that are not allowed (letters, digits, space, . _ -)" >&2; exit 2 ;; esac
+  done
+  echo "GPU fallback order: $(printf '%s, ' "${cands[@]}" | sed 's/, $//')"
+  if [ "$YES" -ne 1 ]; then
+    echo "(dry run: the request of the first card follows; with --yes the cards are tried in this order)"
+    CREATE_POD_CANDIDATE=1 GPU_ID="${cands[0]}" bash "$0" "$@"
+    exit $?
+  fi
+  for c in "${cands[@]}"; do
+    echo "--- trying $c"
+    CREATE_POD_CANDIDATE=1 GPU_ID="$c" bash "$0" "$@"
+    rc=$?
+    [ "$rc" -eq 5 ] || exit "$rc"
+    echo "No capacity for $c (nothing was created), next card." >&2
+  done
+  echo "No capacity for any of: $(printf '%s, ' "${cands[@]}" | sed 's/, $//'). Nothing was created. Try again later: make wait-gpu" >&2
+  exit 5
+fi
+
 GVOL=""
 if [ "$STORAGE" = global ]; then
   GVOL="${GLOBAL_VOLUME_ID:-}"
@@ -89,6 +132,7 @@ fi
 POD_NAME_GIVEN="${POD_NAME:-}"
 POD_NAME="${POD_NAME:-qwen3.8-flash-next}"
 GPU_ID="${GPU_ID:-NVIDIA B200}"
+gpu_note "$GPU_ID"
 GPU_COUNT="${GPU_COUNT:-1}"
 case "$GPU_COUNT" in [1-8]) ;; *) echo "GPU_COUNT must be a whole number from 1 to 8" >&2; exit 2 ;; esac
 DISK_DEFAULT=50; [ "$STORAGE" != local ] || DISK_DEFAULT=200

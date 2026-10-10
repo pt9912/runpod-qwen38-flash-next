@@ -135,6 +135,7 @@ All optional unless marked. A value exported in your shell wins over the same na
 | `RUNPOD_POD_ID` | – | fallback Pod for single-Pod scripts; the active pool Pod wins |
 | `QWEN_URL` | – | endpoint URL if no Pod resolves (Claude Code, `wait-ready`) |
 | `GPU_ID` | `NVIDIA B200` | exact id from `make gpu`. Quote it in `.env` if it has spaces |
+| `GPU_IDS` | – | optional fallback list in order of preference, for example `"NVIDIA H200,NVIDIA H200 NVL,NVIDIA B200"`: `make create` / `make start` use the first card with capacity (see [GPUs](#gpus-and-what-was-validated)) |
 | `GPU_COUNT` | `1` | GPUs per Pod; sets TP. **Keep 1** (see GPUs) |
 | `DATACENTER` | volume's datacenter (any with `STORAGE=global`) | where to place the Pod |
 | `CONTAINER_DISK_GB` | `50` | container disk (the image is about 20 GB unpacked) |
@@ -417,6 +418,15 @@ which would show in very long prefills. Its 2 GB more memory does not remove the
 cache was short by 10.45 GiB). So the NVL is expected to behave like the SXM at 28 % less per hour, **but it is untested and there
 is no stock**: `make wait-gpu ARGS="NVIDIA H200 NVL"` waits for one without starting anything. The B200 costs 51 % more;
 its extra memory could make `PLE_MMAP` unnecessary and its native FP4 should speed up prefill, but none of that has been measured.
+
+**Fallback list (`GPU_IDS`).** With several cards in `GPU_IDS`, `create-pod.sh` runs once per card in the order given and moves
+on to the next card only when the answer is "no capacity" (exit 5, nothing was created); any other result ends the run, so a
+rejected request or a created Pod is never followed by a second attempt. Without `--yes` only the first card's request is
+shown. `make verify` accepts a Pod on any listed card. A card that was never run with this recipe (everything but the H200 SXM)
+gets a warning, and `make precheck` lists them. Prepared on 2026-10-10 and tested against a fake API (fallback, no capacity
+anywhere, dry run, first card works, other error stops, bad input); **no real Pod has been created with it yet**. It works
+best with `STORAGE=local`, where no volume pins the Pod to a datacenter. The H200 NVL and the B200 are meant to be tried once
+each before they are relied on as a fallback.
 
 ## Claude Code
 

@@ -53,6 +53,14 @@ fi
 
 echo
 echo "== Configuration =="
+if [ -n "${GPU_IDS:-}" ]; then
+  ok "GPU_IDS (fallback order): ${GPU_IDS}"
+  IFS=',' read -r -a _gids <<<"$GPU_IDS"
+  for _g in "${_gids[@]}"; do
+    _g="$(printf '%s' "$_g" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ "$_g" = "NVIDIA H200" ] || warn "GPU_IDS: '$_g' was never run with this recipe (validated: NVIDIA H200)"
+  done
+fi
 case "${STORAGE:-network}" in
   network)
     if [ -n "${NETWORK_VOLUME_ID:-}" ]; then

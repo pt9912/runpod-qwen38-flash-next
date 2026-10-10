@@ -80,10 +80,12 @@ try:
 
   # GPU
   g = p.get("gpu") or {}
-  want_gpu = os.environ.get("GPU_ID") or "NVIDIA B200"
+  # GPU_IDS (the fallback list of create-pod.sh) accepts any listed card; else GPU_ID
+  want_list = [x.strip() for x in (os.environ.get("GPU_IDS") or "").split(",") if x.strip()] or [os.environ.get("GPU_ID") or "NVIDIA B200"]
+  want_gpu = " or ".join(want_list)
   want_n = int(os.environ.get("GPU_COUNT") or "1")
   got_id = str(g.get("id", ""))
-  id_ok = bool(got_id) and (want_gpu.lower() in got_id.lower() or got_id.lower() in want_gpu.lower())
+  id_ok = bool(got_id) and any(w.lower() in got_id.lower() or got_id.lower() in w.lower() for w in want_list)
   if g.get("count") == want_n and id_ok:
       ok("GPU: %dx %s" % (want_n, got_id))
   else:
