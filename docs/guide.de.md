@@ -272,7 +272,8 @@ Digest in `REMOTE_IMAGE` eintragen.
   auch wenn kein Pod läuft).
 - **Preis der größeren Container-Disk:** Standard sind 200 GB (`CONTAINER_DISK_GB`; mindestens 150 wird erzwungen):
   50 GB kosten 0,007 $/h, also 200 GB etwa 0,028 $/h, solange der Pod läuft, unter 1 % einer H200.
-- **Jeder Start lädt neu:** Die Container-Disk überlebt den Pod nicht. Stop/Start und ein neuer Pod laden beide
+- **Jeder Start lädt neu:** Die Container-Disk überlebt den Pod nicht (gemessen: nach `make stop` war sie leer,
+  und der Neustart dauerte 8 min 57 s gegenüber 13 min 43 s bei einem neuen Pod, der Unterschied ist das Ziehen des Images). Stop/Start und ein neuer Pod laden beide
   zuerst herunter (der Entrypoint überspringt den Download nur, wenn derselbe Container die Markerdatei
   `.prefetch-complete` schon hat; ein unterbrochener Download wird fortgesetzt). Die Downloadzeit kommt zu Image-Pull
   und Laden hinzu. Ist Hugging Face gerade langsam oder nicht erreichbar, startet der Pod langsam oder gar nicht.
@@ -281,9 +282,11 @@ Digest in `REMOTE_IMAGE` eintragen.
   (Standard: der hier validierte). Das RunPod-Secret `HF_TOKEN` wird eingesetzt (schnellere Downloads, höhere Limits).
   `make create` gibt die Anfrage aus; `make verify` prüft die Download-Einstellungen und schlägt fehl, wenn
   `HF_HUB_OFFLINE=1` den Download blockieren würde.
-- **Stand:** Die Änderung am Entrypoint und die Skripte wurden mit Platzhaltern getestet (frischer Download,
-  Wiederholung, die überspringt, fehlgeschlagener Download, Ablehnung eines nicht lokalen `MODEL`, Pod-Prüfung
-  gegen eine nachgebaute API); **ein Image damit wurde noch nicht gebaut und nicht auf einer GPU ausgeführt**.
+- **Stand:** Am 2026-10-10 mit dem Image `:4` auf einer 1× H200 in EUR-IS-4 gelaufen (eine Beobachtung): Der Pod war
+  **13 min 43 s** nach seinem Start bereit (Image ziehen etwa 3:45, Download 5:04, Laden 1:46, Kompilieren und
+  Warm-up etwa 2 min), und `make check` bestand. Einzelheiten in den [Startzeiten](startup-times.de.md). Vorher wurden
+  der Entrypoint und die Skripte mit Platzhaltern getestet (frischer Download, Wiederholung, die überspringt,
+  fehlgeschlagener Download, Ablehnung eines nicht lokalen `MODEL`, Pod-Prüfung gegen eine nachgebaute API).
 
 ## Anlegen, prüfen, testen## Anlegen, prüfen, testen
 

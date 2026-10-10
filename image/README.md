@@ -11,7 +11,7 @@ installs `serve-b200` as the entrypoint (it reads `MODEL`, `SERVED_MODEL_NAME`, 
 directory that already has the marker is not downloaded again, and an interrupted download resumes. This is what
 `STORAGE=local` in `create-pod.sh` uses (no volume; the 109 GB took 1.5 to 5 minutes on RunPod). The published
 `:3` does not have it: build and push a new tag (for example `:4`) and pin its digest in `REMOTE_IMAGE`.
-Tested with stubs only; no image with this change has been built or run on a GPU.
+Tested with stubs, then run on a 1x H200 on 2026-10-10 (see `docs/startup-times.md`).
 
 ```bash
 IMAGE=docker.io/YOU/vllm-qwen38-b200:1 ./build.sh
@@ -20,8 +20,8 @@ docker push docker.io/YOU/vllm-qwen38-b200:1      # then pin REMOTE_IMAGE by dig
 
 Newest build: `docker.io/pt9912/vllm-qwen38-b200:4`, digest
 `sha256:f4ffbb29303c20fa0a473a89fb017a60f872b115a6a52ae99533111748210774` (linux/amd64, public, 19.9 GB): the same layers as `:3` plus `serve-b200` with the download at start
-(`PREFETCH_REPO`, needed by `STORAGE=local`). Pushed 2026-10-10; the entrypoint was tested with stubs and the image
-only checked for the new script, never run on a GPU.
+(`PREFETCH_REPO`, needed by `STORAGE=local`). Pushed 2026-10-10. Run on a 1x H200 (EUR-IS-4) the same day with `STORAGE=local`: it downloaded the model in
+5 min 04 s and was ready 13 min 43 s after the Pod started; `make check` passed.
 
 Previous build: `docker.io/pt9912/vllm-qwen38-b200:3`, digest
 `sha256:26650509c7a5ae3196e6fa40463e96db67b2858c9a5f08867aa964195d3aa96f` (linux/amd64, public, 19.9 GB).

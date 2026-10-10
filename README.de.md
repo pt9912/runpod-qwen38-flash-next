@@ -70,6 +70,12 @@ make gpu ARGS='"NVIDIA H200"'             # Bestand je Rechenzentrum (Namen mit 
    dann `make create ARGS=--yes`. Das Snapshot-Verzeichnis ist die Hugging-Face-Revision des Modells.
 5. `make wait-ready`, `make check`, und zum Schluss `make stop` (das Volume behält Modell und Caches).
 
+**Alternative ohne Volume (`STORAGE=local`, braucht das Image `:4` oder neuer):** gar kein Volume; der Pod lädt das
+Modell bei jedem Start von Hugging Face (gemessen: 4 bis 5 Minuten; bereit nach 13 min 43 s bei einem neuen Pod, nach
+8 min 57 s bei einem Neustart) und kann in jedem Rechenzentrum laufen. `STORAGE=local` und den Digest von `:4` in `.env`
+setzen, dann `make create`. Siehe den [Guide](docs/guide.de.md#lokaler-speicher-download-beim-start) und die
+[Startzeiten](docs/startup-times.de.md).
+
 Sechs Sitzungen mit dem vollen nativen Kontext: `MAX_MODEL_LEN=262144` und `MAX_NUM_SEQS=6` ergänzen (validiert, 6,45×). `make help` listet alle Ziele.
 
 ## Claude Code

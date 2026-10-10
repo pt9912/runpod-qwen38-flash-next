@@ -40,6 +40,38 @@ no complete start was timed. Downloading the 109.23 GB from Hugging Face onto a 
 took **1 min 32 s** and **4 min 48 s** on two runs, copying them onto the Global Volume about 13 minutes. See the
 [guide](guide.md#local-storage-download-at-start) for what follows from this.
 
+**Without a volume (`STORAGE=local`, image `:4`)** (2026-10-10, 1x H200 in EUR-IS-4, `PLE_MMAP=1`,
+`MAX_MODEL_LEN=262144`, `MAX_NUM_SEQS=6`, 200 GB container disk, `HF_TOKEN`; **one observation**, a new Pod with
+everything cold). `make wait-ready`: **READY after 13 min 43 s (823 s)** from the Pod's `startedAt` (16:03:02 UTC).
+
+| Phase | Time |
+|---|---|
+| `startedAt` to the first `Prefetch:` line (image pull and container start, not measured separately) | about 3 min 45 s (16:03:02 to 16:06:47) |
+| Download of the 109.23 GB from Hugging Face onto the container disk | **5 min 04 s** (16:06:47 to 16:11:51) |
+| Prefetch done to vLLM's engine initialisation (Python and vLLM start) | about 52 s (to 16:12:43) |
+| Loading the main weights from the local disk | 88.3 s |
+| Loading the MTP draft weights | 5.7 s |
+| Model loading in total (vLLM's own figure) | 106.4 s |
+| `torch.compile`, main model and draft head (cold cache on a new container disk) | 23.8 s and 3.3 s |
+| FlashInfer autotune | about 6 s (0 configs saved) |
+| CUDA graphs | about 9 s |
+| vLLM's `init engine` in total (profile, KV cache, warm-up) | 86.9 s (compilation 27.1 s) |
+| `wait-ready` first HTTP 200 (polls every 15 s) | 823 s after `startedAt` |
+
+The KV cache holds 1,690,023 tokens (concurrency 6.45 at 262,144 tokens). `make check` passed. For comparison, the
+three starts from a Network Volume took 5 min 26 s, 15 min 58 s and 10 min 10 s, and vLLM stopped at shard 40 of 133
+after 12 minutes when loading from a Global Volume. Every start of this variant downloads again (the container disk
+does not survive the Pod), so this is the number to plan with: about **14 minutes**, of which the download is about 5 and
+the image pull about 4. The time from Hugging Face varied between 1.5 and 5 minutes in the earlier tests.
+
+**Restart of the stopped Pod** (same Pod, 20 minutes later, its old machine was still free; `make stop`, then
+`make pod-start`; one observation): **READY after 8 min 57 s (537 s)** from the new `startedAt` (16:22:23 UTC).
+The container disk was **empty after the stop**: the entrypoint downloaded the model again (**4 min 15 s**, 16:22:26 to
+16:26:41), then vLLM loaded the main weights in 89.1 s (draft 5.7 s, 107.0 s in total), `torch.compile` took 23.5 s and
+3.3 s again (the compile cache was gone too). The 4 minutes less than the first start (13:43) are almost entirely the
+image pull: the first `Prefetch:` line came 3 s after `startedAt` instead of 3 min 45 s, because the image was already
+on the host. So a restart saves the pull, not the download.
+
 **What is not in these numbers:** pulling the Pod image (8.67 GB compressed) onto the host and starting
 the container, which happens before vLLM's first log line. It was not measured: the clock above starts at
 vLLM's first log line, not at the Pod's `startedAt`. Also not measured: a restart of a stopped Pod on its

@@ -260,7 +260,8 @@ the digest into `REMOTE_IMAGE`.
   to forget (a Global Volume holding the model bills about $9.90 a month even while no Pod runs).
 - **Price of the larger container disk:** the default is 200 GB (`CONTAINER_DISK_GB`; at least 150 is
   enforced): 50 GB cost $0.007/h, so 200 GB cost about $0.028/h while the Pod runs, under 1 % of an H200.
-- **Every start downloads again:** the container disk does not outlive the Pod. Stop/start and a new Pod
+- **Every start downloads again:** the container disk does not outlive the Pod (measured: after `make stop` it was
+  empty, and the restart took 8 min 57 s against 13 min 43 s for a new Pod, the difference being the image pull). Stop/start and a new Pod
   both download first (the entrypoint skips the download only if the same container already has the
   marker `.prefetch-complete`; an interrupted download resumes). Plan for the download time on top of
   the image pull and the load. If Hugging Face is slow or down at that moment, the start is slow or fails.
@@ -269,9 +270,11 @@ the digest into `REMOTE_IMAGE`.
   commit (default the one validated here). The `HF_TOKEN` RunPod Secret is injected (faster downloads, higher
   limits). `make create` prints the request; `make verify` checks the download settings and fails if
   `HF_HUB_OFFLINE=1` would block the download.
-- **Status:** the entrypoint change and the scripts were tested with stubs (fresh download, repeat that
-  skips, failed download, refusal of a non-local `MODEL`, a Pod check against a fake API); **no image with
-  it has been built or run on a GPU yet**.
+- **Status:** run on 2026-10-10 with image `:4` on a 1x H200 in EUR-IS-4 (one observation): the Pod was ready
+  **13 min 43 s** after its start (image pull about 3:45, download 5:04, loading 1:46, compile and warm-up about
+  2 min), and `make check` passed. Details in [startup times](startup-times.md). Before that, the entrypoint and the
+  scripts were tested with stubs (fresh download, repeat that skips, failed download, refusal of a non-local `MODEL`,
+  a Pod check against a fake API).
 
 ## Create, verify, check## Create, verify, check
 

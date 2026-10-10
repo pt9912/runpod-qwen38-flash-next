@@ -67,6 +67,11 @@ make gpu ARGS='"NVIDIA H200"'             # stock per datacenter (quote names wi
    then `make create ARGS=--yes`. The snapshot directory is the checkpoint's Hugging Face revision.
 5. `make wait-ready`, `make check`, and when done `make stop` (the volume keeps model and caches).
 
+**Alternative without a volume (`STORAGE=local`, needs image `:4` or newer):** no volume at all; the Pod downloads
+the model from Hugging Face at every start (measured: 4 to 5 minutes; ready 13 min 43 s after a new Pod, 8 min 57 s after
+a restart) and can run in any datacenter. Set `STORAGE=local` and the `:4` digest in `.env`, then `make create`. See the
+[guide](docs/guide.md#local-storage-download-at-start) and the [startup times](docs/startup-times.md).
+
 Six sessions of the full native context: add `MAX_MODEL_LEN=262144` and `MAX_NUM_SEQS=6` (validated, 6.45x). `make help` lists every target.
 
 ## Claude Code
