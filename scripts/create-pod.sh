@@ -45,6 +45,8 @@
 #   REMOTE_IMAGE        REQUIRED: the patched x86_64 vLLM image (image/), ideally pinned by digest
 #   MODEL               default: starkweatherdigital/qwen3.8-flash-next-nvfp4
 #   MAX_MODEL_LEN       default: 131072; GPU_MEMORY_UTILIZATION default 0.90
+#   Per card: MAX_NUM_SEQS, MAX_MODEL_LEN, PLE_MMAP and GPU_MEMORY_UTILIZATION can be set for one card only by adding
+#                       the card to the name, e.g. MAX_NUM_SEQS_NVIDIA_B200=12 (see scripts/_gpu.sh); it beats the plain variable.
 #   MAX_NUM_SEQS        default: 16: concurrent sequences. The KV cache holds a fixed number of tokens, so
 #                       MAX_NUM_SEQS x MAX_MODEL_LEN should not exceed it (vLLM prints "Maximum concurrency")
 #   YARN_FACTOR         optional: static YaRN factor (4.0 for 1M, 2.0 for 524288) to go beyond the native
@@ -67,6 +69,8 @@ source "$HERE/_api.sh"
 source "$HERE/_pool.sh"
 # shellcheck source=scripts/_storage.sh
 source "$HERE/_storage.sh"
+# shellcheck source=scripts/_gpu.sh
+source "$HERE/_gpu.sh"
 
 YES=0; ONLINE=0; SSH=0; FORCE=0; TERMINATE_ON_FAIL=0
 [ "${CREATE_POD_SSH:-0}" != 1 ] || SSH=1
@@ -198,9 +202,14 @@ if [ "$STORAGE" = local ]; then
   ONLINE=1   # the Pod downloads: the HF_TOKEN secret is injected and HF_HUB_OFFLINE is not set
   [ "$DISK" -ge 150 ] || { echo "STORAGE=local needs CONTAINER_DISK_GB of at least 150 (the model is 102 GiB, the image about 20 GB; 200 is the default)." >&2; exit 2; }
 fi
-CTX="${MAX_MODEL_LEN:-131072}"
+# Settings that depend on the card (a per-card variable beats the plain one, see scripts/_gpu.sh)
+for _n in MAX_MODEL_LEN MAX_NUM_SEQS PLE_MMAP GPU_MEMORY_UTILIZATION; do
+  _src="$(gpu_setting_source "$_n" "$GPU_ID")"
+  case "$_src" in "${_n}_"*) echo "Profile for $GPU_ID: $_n=$(gpu_setting "$_n" "$GPU_ID") (from $_src)" >&2 ;; esac
+done
+CTX="$(gpu_setting MAX_MODEL_LEN "$GPU_ID" 131072)"
 case "$CTX" in ''|*[!0-9]*) echo "MAX_MODEL_LEN must be a whole number" >&2; exit 2 ;; esac
-SEQS="${MAX_NUM_SEQS:-16}"
+SEQS="$(gpu_setting MAX_NUM_SEQS "$GPU_ID" 16)"
 case "$SEQS" in ''|*[!0-9]*) echo "MAX_NUM_SEQS must be a whole number" >&2; exit 2 ;; esac
 { [ "$SEQS" -ge 1 ] && [ "$SEQS" -le 256 ]; } || { echo "MAX_NUM_SEQS must be between 1 and 256" >&2; exit 2; }
 YARN="${YARN_FACTOR:-}"
@@ -215,7 +224,7 @@ if [ "$STORAGE" = global ]; then
     *) echo "STORAGE=global needs MODEL to be the model's directory on the Global Volume (for example /workspace/models/qwen3.8-flash-next-nvfp4), not a Hugging Face id: a download onto the Global Volume is not safe (no file locks, no atomic rename) and one onto the container disk would repeat on every new Pod." >&2; exit 2 ;;
   esac
 fi
-MMAP="${PLE_MMAP:-0}"
+MMAP="$(gpu_setting PLE_MMAP "$GPU_ID" 0)"
 case "$MMAP" in 0|1) ;; *) echo "PLE_MMAP must be 0 or 1" >&2; exit 2 ;; esac
 if [ "$MMAP" = 1 ]; then
   case "$MODEL" in
@@ -225,7 +234,7 @@ if [ "$MMAP" = 1 ]; then
 fi
 body="$(HF_HOME_DIR="$HF_HOME_DIR" VLLM_CACHE_DIR="$VLLM_CACHE_DIR" POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" GPU_COUNT="$GPU_COUNT" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
   PREFETCH_REPO="$PREFETCH_REPO" PREFETCH_REVISION="$PREFETCH_REVISION" \
-  IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" SEQS="$SEQS" MMAP="$MMAP" YARN="$YARN" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
+  IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" SEQS="$SEQS" MMAP="$MMAP" YARN="$YARN" GPU_MEM="$(gpu_setting GPU_MEMORY_UTILIZATION "$GPU_ID" 0.90)" \
   VSEC="${VLLM_SECRET_NAME:-VLLM_API_KEY}" HSEC="${HF_SECRET_NAME:-HF_TOKEN}" python3 -c '
 import json, os
 e = os.environ

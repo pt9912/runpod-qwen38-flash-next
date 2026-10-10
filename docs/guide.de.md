@@ -136,6 +136,7 @@ Alles optional, wenn nicht anders markiert. Ein in der Shell exportierter Wert s
 | `RUNPOD_POD_ID` | – | Ausweich-Pod für Einzel-Pod-Skripte; der aktive Pool-Pod gewinnt |
 | `QWEN_URL` | – | Endpunkt-URL, wenn kein Pod aufgelöst wird (Claude Code, `wait-ready`) |
 | `GPU_ID` | `NVIDIA B200` | exakte ID aus `make gpu`. In `.env` in Anführungszeichen, wenn sie Leerzeichen hat |
+| `MAX_NUM_SEQS_<KARTE>` usw. | – | kartenspezifischer Wert von `MAX_NUM_SEQS`, `MAX_MODEL_LEN`, `PLE_MMAP` oder `GPU_MEMORY_UTILIZATION`: die Karte in Großbuchstaben an den Namen hängen, jede Folge anderer Zeichen wird zu `_` (`MAX_NUM_SEQS_NVIDIA_B200=12`, `NVIDIA B300 SXM6 AC` ergibt `..._NVIDIA_B300_SXM6_AC`); schlägt die einfache Variable; muss in `.env` stehen |
 | `GPU_IDS` | – | optionale Ausweichliste in Reihenfolge der Vorliebe, zum Beispiel `"NVIDIA H200,NVIDIA H200 NVL,NVIDIA B200"`: `make create` / `make start` nehmen die erste Karte mit Bestand (siehe [GPUs](#gpus-und-was-validiert-wurde)) |
 | `GPU_COUNT` | `1` | GPUs je Pod; setzt TP. **Bei 1 bleiben** (siehe GPUs) |
 | `DATACENTER` | Rechenzentrum des Volumes (beliebig bei `STORAGE=global`) | wo der Pod laufen soll |
@@ -448,6 +449,24 @@ Am 2026-10-10 vorbereitet und gegen eine nachgebaute API getestet (Ausweichen, n
 anderer Fehler bricht ab, ungültige Eingabe); **mit ihr wurde noch kein echter Pod angelegt**. Am besten passt sie zu
 `STORAGE=local`, wo kein Volume den Pod an ein Rechenzentrum bindet. Die H200 NVL und die B200 sollen je einmal ausprobiert werden,
 bevor man sich darauf als Ausweichkarte verlässt.
+
+**`PLE_MMAP` je Karte (Schätzungen aus den gemessenen H200-Zahlen, nichts davon lief auf einer anderen Karte).** Auf der H200 belegt
+das Modell mit `PLE_MMAP=1` 76,04 GiB und lässt 46,75 GiB KV-Cache übrig; ohne mmap sind die Gewichte 102,87 GiB groß, und der
+Start scheitert. Auf die anderen Karten bei `GPU_MEMORY_UTILIZATION=0.90` hochgerechnet (nutzbarer Speicher etwa 0,9 des
+Kartenspeichers, die Werte haben also einen Fehler von 10 % oder mehr):
+
+| Karte | `PLE_MMAP` nötig? | KV-Cache mit mmap | KV-Cache ohne mmap | Sitzungen mit 262.144 Tokens |
+|---|---|---|---|---|
+| H200 SXM / NVL (141 bis 143 GB) | **ja** (gemessen: scheitert ohne) | 46,75 GiB (gemessen) | negativ (gemessen) | 6 (gemessen) |
+| B200 (180 GB) | nein | etwa 81 GiB | etwa 24 bis 54 GiB | etwa 11 mit mmap, etwa 3 bis 7 ohne |
+| B300 (288 GB) | nein | etwa 161 GiB | etwa 104 bis 134 GiB | etwa 22 mit mmap, etwa 14 bis 18 ohne |
+
+Die Spanne ohne mmap ist groß, weil der gescheiterte H200-Lauf etwa 30 GiB mehr Zusatzbedarf hatte als der erfolgreiche, und nicht
+bekannt ist, ob eine größere Karte ihn auch hat. Auch wo mmap nicht nötig ist, bringt es also mehr KV-Cache; was es an Geschwindigkeit
+kostet (die PLE-Tabelle wird aus dem Seiten-Cache des Hosts statt aus dem GPU-Speicher gelesen), ist nicht gemessen, weil die H200
+ohne es nicht läuft. Für den ersten B200-Test empfiehlt das Image-README `PLE_MMAP=0`, um Blackwell-Kernel und mmap
+auseinanderzuhalten; ein zweiter Lauf mit `PLE_MMAP=1` zeigt dann den Unterschied. Beides lässt sich je Karte setzen, zum Beispiel
+`PLE_MMAP_NVIDIA_B200=0`.
 
 ## Claude Code
 

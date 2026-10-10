@@ -25,6 +25,8 @@ source "$HERE/_api.sh"
 source "$HERE/_pool.sh"
 # shellcheck source=scripts/_storage.sh
 source "$HERE/_storage.sh"
+# shellcheck source=scripts/_gpu.sh
+source "$HERE/_gpu.sh"
 storage_resolve_model   # STORAGE=local: MODEL is the directory in the Pod, plus PREFETCH_REPO / PREFETCH_REVISION
 
 pool_resolve_pod "${1:-}"; rc=$?
@@ -158,11 +160,17 @@ try:
   if cmd:
       fail("the Pod overrides the image command (cmd=%s): serve-b200 would not get its settings" % json.dumps(cmd))
   want_model = os.environ.get("MODEL") or "starkweatherdigital/qwen3.8-flash-next-nvfp4"
-  want_ctx = os.environ.get("MAX_MODEL_LEN") or "131072"
+  # settings that depend on the card are read for the card the Pod really runs on (NAME_<CARD> beats NAME, see scripts/_gpu.sh)
+  import re
+  card_key = re.sub(r"[^A-Z0-9]+", "_", got_id.upper()).strip("_")
+  def per_card(name, default):
+      return os.environ.get("%s_%s" % (name, card_key)) or os.environ.get(name) or default
+  want_ctx = per_card("MAX_MODEL_LEN", "131072")
   for key, want, level, what in (("MODEL", want_model, fail, "model"),
                                  ("SERVED_MODEL_NAME", "qwen3.8-flash-next", fail, "served model name"),
                                  ("CTX", want_ctx, fail, "context length"),
-                                 ("SEQS", os.environ.get("MAX_NUM_SEQS") or "16", fail, "max concurrent sequences"),
+                                 ("SEQS", per_card("MAX_NUM_SEQS", "16"), fail, "max concurrent sequences"),
+                                 ("MMAP", per_card("PLE_MMAP", "0"), warn, "PLE mmap"),
                                  ("MTP", "1", warn, "MTP speculative decoding (1 token)"),
                                  ("CACHE", "1", warn, "prefix caching")):
       if env.get(key) == want:
