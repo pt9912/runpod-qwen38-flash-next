@@ -16,7 +16,8 @@
 #   FILL_MODEL_REPO    default starkweatherdigital/qwen3.8-flash-next-nvfp4
 #   FILL_REVISION      default 1b304e5f99de0faaf43c3a959f2b4000294bf65c (a fixed commit: reproducible)
 #   FILL_TARGET        default /workspace/models/qwen3.8-flash-next-nvfp4 (becomes MODEL in .env)
-#   FILL_GPU_IDS       comma separated GPU ids, any one of them will do (default: the cheapest secure cards)
+#   FILL_GPU_IDS       comma separated GPU ids, any one of them will do (default: the cheapest secure cards,
+#                      plus the A40 at about $0.59/h as a fallback: the cheap ones are often out of stock)
 #   FILL_DISK_GB       container disk, default 160 (the model is about 102 GiB and is held there once)
 #   FILL_IMAGE         default python:3.12-slim
 #   FILL_TIMEOUT       seconds the script inside the Pod may run, default 7200; it then ends itself
@@ -49,7 +50,7 @@ done
 REPO="${FILL_MODEL_REPO:-starkweatherdigital/qwen3.8-flash-next-nvfp4}"
 REV="${FILL_REVISION:-1b304e5f99de0faaf43c3a959f2b4000294bf65c}"
 TARGET="${FILL_TARGET:-/workspace/models/qwen3.8-flash-next-nvfp4}"
-GPUS="${FILL_GPU_IDS:-NVIDIA RTX 2000 Ada Generation,NVIDIA RTX A4000,NVIDIA RTX A4500,NVIDIA RTX A5000,NVIDIA RTX 4000 Ada Generation,NVIDIA GeForce RTX 3090}"
+GPUS="${FILL_GPU_IDS:-NVIDIA RTX 2000 Ada Generation,NVIDIA RTX A4000,NVIDIA RTX A4500,NVIDIA RTX A5000,NVIDIA RTX 4000 Ada Generation,NVIDIA GeForce RTX 3090,NVIDIA A40}"
 DISK="${FILL_DISK_GB:-160}"
 IMAGE="${FILL_IMAGE:-python:3.12-slim}"
 TMO="${FILL_TIMEOUT:-7200}"
