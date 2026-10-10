@@ -395,9 +395,28 @@ all five checks; two short chat requests gave coherent German answers with the r
 content (the second ran at about 68 tokens/s end to end through the RunPod proxy; the first included
 one-time Triton JIT). That is one Pod and two short requests, not a benchmark.
 
-List prices seen in the RunPod console on 2026-10-04 (not read from the API): B200 6.79 $/h, H200 SXM
-4.59 $/h, RTX PRO 6000 2.09 $/h, B300 7.89 $/h. Stock was "none" for the B200, "low" for the H200 SXM in
-most datacenters.
+Prices and stock on 2026-10-10, **read from the RunPod catalog API** (`GET /v2/catalog/gpus`, Secure Cloud) and the
+stock query behind `make gpu`; specifications from the GPU memory of the catalog and [NVIDIA's H200
+page](https://www.nvidia.com/en-us/data-center/h200/). They change; `make gpu` shows the current stock.
+
+| | H200 SXM (validated) | H200 NVL | B200 |
+|---|---|---|---|
+| Price, Secure | 5.29 $/h | **3.79 $/h** (28 % less) | 7.99 $/h (51 % more) |
+| Stock on 2026-10-10 | high overall, low in most datacenters | **none anywhere** | low (EU-RO-1, US-CA-2) |
+| GPU memory | 141 GB (NVIDIA: 141 GB) | 143 GB in the catalog (NVIDIA: 141 GB) | 180 GB |
+| Memory bandwidth | 4.8 TB/s (NVIDIA) | 4.8 TB/s (NVIDIA) | not checked here |
+| FP8 tensor cores (NVIDIA, with sparsity) | 3,958 TFLOPS | 3,341 TFLOPS (16 % less) | not checked here |
+| Max power (NVIDIA) | up to 700 W | up to 600 W | not checked here |
+| Form factor / link | SXM, NVLink 900 GB/s | PCIe dual slot, NVLink bridge 900 GB/s (2 or 4 GPUs) | not checked here |
+| FP4 | none (Hopper: Marlin weight-only backend) | none (also Hopper) | native FP4 tensor cores (Blackwell) |
+| Status here | **validated** (2026-10-04 and 2026-10-10) | never run | never run |
+
+Reading it for this setup (one GPU, so the NVLink difference does not matter): the **H200 NVL has the same memory
+bandwidth** as the SXM, and decoding is limited by that bandwidth, so similar speed is expected; its peak compute is 16 % lower,
+which would show in very long prefills. Its 2 GB more memory does not remove the need for `PLE_MMAP=1` (without it the KV
+cache was short by 10.45 GiB). So the NVL is expected to behave like the SXM at 28 % less per hour, **but it is untested and there
+is no stock**: `make wait-gpu ARGS="NVIDIA H200 NVL"` waits for one without starting anything. The B200 costs 51 % more;
+its extra memory could make `PLE_MMAP` unnecessary and its native FP4 should speed up prefill, but none of that has been measured.
 
 ## Claude Code
 
