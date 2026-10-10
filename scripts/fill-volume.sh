@@ -84,7 +84,17 @@ echo "FILL_LOG downloaded $SRC_FILES files, $SRC_BYTES bytes: $(date -u +%H:%M:%
 mkdir -p "$T" || { echo "FILL_FAILED mkdir"; exit 1; }
 ( while sleep 180; do echo "FILL_LOG still copying: $(date -u +%H:%M:%S)"; done ) &
 tick=$!
-cp -r --no-preserve=mode,ownership,timestamps /root/model/. "$T"/ || { kill $tick; echo "FILL_FAILED copy"; exit 1; }
+python3 - "$T" <<"PY" || { kill $tick; echo "FILL_FAILED copy"; exit 1; }
+import os, shutil, sys
+# no cp: it sets permission bits after each file, which a Global Volume refuses ("Operation not permitted")
+dst, src = sys.argv[1], "/root/model"
+for root, dirs, files in os.walk(src):
+    rel = os.path.relpath(root, src)
+    d = dst if rel == "." else os.path.join(dst, rel)
+    os.makedirs(d, exist_ok=True)
+    for f in files:
+        shutil.copyfile(os.path.join(root, f), os.path.join(d, f))
+PY
 kill $tick
 echo "FILL_LOG copied, verifying: $(date -u +%H:%M:%S)"
 ok=0
