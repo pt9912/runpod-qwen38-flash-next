@@ -18,7 +18,12 @@ IMAGE=docker.io/YOU/vllm-qwen38-b200:1 ./build.sh
 docker push docker.io/YOU/vllm-qwen38-b200:1      # then pin REMOTE_IMAGE by digest in ../.env
 ```
 
-Published build: `docker.io/pt9912/vllm-qwen38-b200:3`, digest
+Newest build: `docker.io/pt9912/vllm-qwen38-b200:4`, digest
+`sha256:f4ffbb29303c20fa0a473a89fb017a60f872b115a6a52ae99533111748210774` (linux/amd64, public, 19.9 GB): the same layers as `:3` plus `serve-b200` with the download at start
+(`PREFETCH_REPO`, needed by `STORAGE=local`). Pushed 2026-10-10; the entrypoint was tested with stubs and the image
+only checked for the new script, never run on a GPU.
+
+Previous build: `docker.io/pt9912/vllm-qwen38-b200:3`, digest
 `sha256:26650509c7a5ae3196e6fa40463e96db67b2858c9a5f08867aa964195d3aa96f` (linux/amd64, public, 19.9 GB).
 Built and import-tested on a CPU host only; never run on a GPU.
 
