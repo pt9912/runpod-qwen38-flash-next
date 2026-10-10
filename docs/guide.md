@@ -208,19 +208,17 @@ on the container disk. Without a Network Volume nothing binds the Pod to a datac
 
 1. `make volume ARGS='--global'` (dry run), then `make volume ARGS='--global --yes'`: it prints
    `GLOBAL_VOLUME_ID=...` for `.env`. (Or in the console: Storage > New volume > **Global volume**.)
-2. Fill it once. Global Volumes attach to GPU Pods only, so deploy the cheapest GPU Pod with a standard
-   PyTorch template, a **150 GB container disk** and the Global Volume on `/workspace`. In its terminal:
-   ```bash
-   pip install -U "huggingface_hub[hf_xet]"
-   export HF_HOME=/root/hf HF_XET_HIGH_PERFORMANCE=1   # plus HF_TOKEN if the repo asks for it
-   hf download starkweatherdigital/qwen3.8-flash-next-nvfp4 \
-     --revision 1b304e5f99de0faaf43c3a959f2b4000294bf65c --local-dir /root/model
-   rm -rf /root/model/.cache                            # download bookkeeping, not part of the model
-   mkdir -p /workspace/models
-   cp -r /root/model /workspace/models/qwen3.8-flash-next-nvfp4
-   du -sh /workspace/models/qwen3.8-flash-next-nvfp4    # about 102 GiB
-   ```
-   The download goes to the container disk first, because it needs file locks. Then terminate that Pod.
+2. Fill it once: `make fill-volume` (dry run: prints the request and the script that runs in the Pod), then
+   `make fill-volume ARGS=--yes`. Global Volumes attach to GPU Pods only, so it starts a temporary GPU Pod
+   (the cheapest secure card, about $0.25/h, per second). The Pod downloads the pinned revision onto its
+   container disk (the download needs file locks), copies it onto the volume, compares every file name and
+   size with the download, writes `.fill-complete` and ends; the script reads the result from the Pod's log
+   and **terminates the Pod**. It prints the `.env` lines. A repeated run finds the marker and does nothing.
+   If the script dies hard (`make abort` uses `docker kill`), the Pod ends by itself after `FILL_TIMEOUT`
+   (7200 s) at the latest; check with `make smoke`. Settings, all optional (`FILL_*`; see `.env.example`): (`FILL_GPU_IDS`,
+   `FILL_REVISION`, `FILL_TARGET`, `FILL_DISK_GB`, `FILL_TIMEOUT`); `--token` injects the `HF_TOKEN` secret.
+   **Not run yet**; the in-Pod script was tested in a `python:3.12-slim` container with a stubbed download
+   (success, repeat, and a tampered copy that must fail).
 3. In `.env`:
    ```
    STORAGE=global

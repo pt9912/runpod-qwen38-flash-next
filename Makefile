@@ -32,10 +32,10 @@
 #
 # A container's own pool lock (_pool.sh) never spans two `docker run` invocations: each gets a
 # fresh filesystem, so the lock file starts empty every time and would never actually block a
-# second run. Anything that can START or CREATE a Pod (create, start, pod-start,
+# second run. Anything that can START or CREATE a Pod (create, start, pod-start, fill-volume,
 # start-when-free) is therefore serialized HERE, by a lock on the host, before it ever reaches
 # the container: only one such target can run at a time; a second exits 99 with a message. Each
-# of the four gets a fixed, predictable container name (runpod-qwen38-<target>) so a stuck one can
+# of the five gets a fixed, predictable container name (runpod-qwen38-<target>) so a stuck one can
 # be found and stopped: `make abort` (or `docker ps --filter name=^/runpod-qwen38-<target>$$` /
 # `docker kill <name>` by hand). Prefer that over killing the `make`/`flock` process itself: Make
 # does not forward signals to a recipe's children, so that can leave the container (and the lock)
@@ -56,7 +56,8 @@ PASSTHROUGH := -e RUNPOD_API_KEY -e RUNPOD_BASE_URL -e RUNPOD_POD_ID -e NETWORK_
                -e VLLM_API_KEY -e QWEN_URL -e POOL_PREFIX -e POOL_MAX \
                -e REMOTE_IMAGE -e MODEL -e MAX_MODEL_LEN -e GPU_MEMORY_UTILIZATION -e PLE_MMAP \
                -e GPU_ID -e DATACENTER -e CONTAINER_DISK_GB -e VOLUME_SIZE_GB -e VOLUME_NAME -e GPU_COUNT -e VLLM_EXTRA_ARGS -e MAX_NUM_SEQS -e YARN_FACTOR \
-               -e STORAGE -e GLOBAL_VOLUME_ID -e HF_HOME_DIR -e VLLM_CACHE_DIR
+               -e STORAGE -e GLOBAL_VOLUME_ID -e HF_HOME_DIR -e VLLM_CACHE_DIR \
+               -e FILL_MODEL_REPO -e FILL_REVISION -e FILL_TARGET -e FILL_GPU_IDS -e FILL_DISK_GB -e FILL_IMAGE -e FILL_TIMEOUT -e HF_SECRET_NAME
 LOCK_FILE  := $(or $(XDG_RUNTIME_DIR),/tmp)/runpod-qwen38-make-$(shell id -u).lock
 LOG_FILE   := $(CURDIR)/.startup-times.log
 DOCKER_RUN_BASE := docker run --rm -i $(ENV_MOUNT) $(PASSTHROUGH)
@@ -68,7 +69,7 @@ LOCKED     := flock -n -E 99 "$(LOCK_FILE)"
 CAPTURE = ; rc=$$?; echo "$$rc" > "$(CURDIR)/.make-exit-code.$(1)"; exit $$rc
 
 .PHONY: help build precheck smoke gpu volume wait-gpu verify check logs wait-ready stop pod-stop pod-terminate \
-        create start pod-start start-when-free abort
+        create start pod-start start-when-free fill-volume abort
 
 # Lists every target below that carries a trailing `## ...` comment, in the order they appear in
 # this file (not alphabetically), so the grouping into read-only/single-Pod actions vs. the
@@ -126,15 +127,19 @@ pod-start: build ## Start the stopped Pod RUNPOD_POD_ID
 	$(LOCKED) $(DOCKER_RUN_BASE) --name runpod-qwen38-pod-start $(IMAGE) bash scripts/pod-start.sh $(ARGS); rc=$$?; \
 	  [ "$$rc" -ne 99 ] || echo "Another create/start is already running on this machine. Find it: docker ps --filter name=runpod-qwen38-   Stop it: make abort" >&2; \
 	  echo "$$rc" > "$(CURDIR)/.make-exit-code.pod-start"; exit "$$rc"
+fill-volume: build ## Fill the Global Volume with the model via a temporary GPU Pod (ARGS=--yes to run; omit for a dry run)
+	$(LOCKED) $(DOCKER_RUN_BASE) --name runpod-qwen38-fill-volume $(IMAGE) bash scripts/fill-volume.sh $(ARGS); rc=$$?; \
+	  [ "$$rc" -ne 99 ] || echo "Another create/start is already running on this machine. Find it: docker ps --filter name=runpod-qwen38-   Stop it: make abort" >&2; \
+	  echo "$$rc" > "$(CURDIR)/.make-exit-code.fill-volume"; exit "$$rc"
 start-when-free: build ## Start the stopped Pod RUNPOD_POD_ID, retrying while its GPU is occupied
 	$(LOCKED) $(DOCKER_RUN_BASE) --name runpod-qwen38-start-when-free $(IMAGE) bash scripts/start-when-free.sh $(ARGS); rc=$$?; \
 	  [ "$$rc" -ne 99 ] || echo "Another create/start is already running on this machine. Find it: docker ps --filter name=runpod-qwen38-   Stop it: make abort" >&2; \
 	  echo "$$rc" > "$(CURDIR)/.make-exit-code.start-when-free"; exit "$$rc"
 
-# Finds whichever of the four named containers above is running (there is at most one, the host
+# Finds whichever of the five named containers above is running (there is at most one, the host
 # lock guarantees that) and stops it. The correct way to cancel a create/start; see the header.
 abort: ## Stop a stuck create/start/pod-start/start-when-free container
-	@cid="$$(docker ps -q --filter 'name=^/runpod-qwen38-(create|start|pod-start|start-when-free)$$')"; \
+	@cid="$$(docker ps -q --filter 'name=^/runpod-qwen38-(create|start|pod-start|start-when-free|fill-volume)$$')"; \
 	if [ -z "$$cid" ]; then echo "Nothing to abort: no runpod-qwen38-* container is running."; exit 0; fi; \
 	docker ps --filter "id=$$cid" --format 'Stopping: {{.Names}} ({{.ID}}), running for {{.RunningFor}}'; \
 	docker kill $$cid >/dev/null
