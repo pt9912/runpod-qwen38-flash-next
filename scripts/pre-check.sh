@@ -62,7 +62,12 @@ case "${STORAGE:-network}" in
     fi
     ;;
   global)
-    ok "STORAGE=global: model on a Global Volume, caches on the container disk; new Pods are created in the web console"
+    ok "STORAGE=global: model on a Global Volume, caches on the container disk; new Pods are created through GraphQL"
+    if [ -n "${GLOBAL_VOLUME_ID:-}" ]; then
+      ok "GLOBAL_VOLUME_ID is set"
+    else
+      warn "GLOBAL_VOLUME_ID is not set (needed to create Pods; make volume ARGS='--global --yes' prints it)"
+    fi
     case "${MODEL:-}" in
       /*) ok "MODEL is a local directory" ;;
       *) fail "STORAGE=global needs MODEL=<directory on the Global Volume>, e.g. /workspace/models/qwen3.8-flash-next-nvfp4" ;;

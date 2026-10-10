@@ -25,7 +25,7 @@
 #   --wait       afterwards run wait-for-ready.sh for the running Pod (measures the time to ready)
 # Environment: POOL_PREFIX (default qwen3.8-flash-next), POOL_MAX (default 6), NETWORK_VOLUME_ID etc. as
 #   for create-pod.sh (CREATE_POD_SSH=1 makes new Pods expose ssh); READY_TIMEOUT (seconds, default 3600) for --wait;
-#   STORAGE=global implies --no-create (the API cannot attach a Global Volume; see scripts/_storage.sh)
+#   STORAGE=global creates Pods through GraphQL with GLOBAL_VOLUME_ID (see scripts/_storage.sh)
 #
 # Only ONE start-any.sh (or create-pod.sh --yes) can run at a time on this machine (a kernel file
 # lock, released even if the script is killed); a second one exits with code 4 and starts/creates nothing.
@@ -60,10 +60,6 @@ case "$MAX_WAIT$INTERVAL$POOL_MAX" in ''|*[!0-9]*) echo "MAX_WAIT_SECONDS, INTER
 MAX_WAIT=$((10#$MAX_WAIT)); INTERVAL=$((10#$INTERVAL)); POOL_MAX=$((10#$POOL_MAX))
 [ "$INTERVAL" -ge "${START_MIN_INTERVAL:-30}" ] || { echo "INTERVAL must be >= 30 s (API rate limit)" >&2; exit 2; }
 [ "$POOL_MAX" -ge 1 ] || { echo "POOL_MAX must be >= 1" >&2; exit 2; }
-if [ "$STORAGE" = global ] && [ "$CREATE" -eq 1 ]; then
-  CREATE=0
-  echo "STORAGE=global: only existing pool Pods are started; a new one has to be created in the web console (make create prints its settings)."
-fi
 
 tmp="$(mktemp)"; child=""
 trap 'rm -f "$tmp"; pool_lock_release' EXIT

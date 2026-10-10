@@ -6,8 +6,9 @@
 #   STORAGE=global   a Global Volume (beta) holds only the model (MODEL=<local dir on it>); the caches
 #                    stay on the container disk. Global Volumes have no file locking and no atomic
 #                    rename, so nothing that writes (Hugging Face cache, vLLM compile cache) goes there.
-#                    The RunPod API cannot attach a Global Volume (checked 2026-10-04, v1 and v2), so
-#                    such a Pod is created in the web console; create-pod.sh prints the settings for it.
+#                    REST v1 and v2 cannot attach a Global Volume (checked 2026-10-04), so create-pod.sh creates
+#                    such a Pod through GraphQL (podFindAndDeployOnDemand with volumeMounts of type
+#                    OBJECT_STORE_VOLUME, as runpod-python does). GLOBAL_VOLUME_ID names the volume.
 #   HF_HOME_DIR / VLLM_CACHE_DIR   override the defaults below (HF_HUB_CACHE is HF_HOME_DIR/hub)
 STORAGE="${STORAGE:-network}"
 case "$STORAGE" in

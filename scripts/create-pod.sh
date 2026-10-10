@@ -17,8 +17,11 @@
 #              The environment variable CREATE_POD_SSH=1 does the same (start-any.sh passes it on).
 # Environment (all optional):
 #   STORAGE             network (default) or global; see scripts/_storage.sh. With global, the model is on a
-#                       Global Volume and the caches on the container disk. The API cannot attach a Global
-#                       Volume, so --yes is refused: the dry run prints the settings for the web console.
+#                       Global Volume (GLOBAL_VOLUME_ID, see `make volume ARGS=--global`) and the caches on the
+#                       container disk. REST v2 cannot attach a Global Volume, so the Pod is created through
+#                       GraphQL (podFindAndDeployOnDemand, as runpod-python does; announced to be retired in
+#                       early 2027). Not run yet: the first --yes may be rejected for a field name.
+#   GLOBAL_VOLUME_ID    REQUIRED with STORAGE=global and --yes: the id printed by `make volume ARGS='--global --yes'`
 #   HF_HOME_DIR / VLLM_CACHE_DIR   default: under /workspace (network), under /root/.cache (global)
 #   NETWORK_VOLUME_ID   REQUIRED with STORAGE=network: the ID of your Network Volume (put it in .env)
 #   POD_NAME            default: qwen3.8-flash-next; must start with POOL_PREFIX (else no pool guard
@@ -66,11 +69,14 @@ for a in "$@"; do
   esac
 done
 
-if [ "$STORAGE" = global ] && [ "$YES" -eq 1 ]; then
-  echo "STORAGE=global: the RunPod API cannot attach a Global Volume (v1 and v2, checked 2026-10-04), so a Pod" >&2
-  echo "created here would have no model. Nothing was created. Run without --yes: the dry run prints the" >&2
-  echo "settings to enter in the web console (Pods > Deploy)." >&2
-  exit 2
+GVOL=""
+if [ "$STORAGE" = global ]; then
+  GVOL="${GLOBAL_VOLUME_ID:-}"
+  if [ -z "$GVOL" ] && [ "$YES" -eq 1 ]; then
+    echo "STORAGE=global needs GLOBAL_VOLUME_ID in .env (create one: make volume ARGS='--global --yes', or list: make volume ARGS='--global --list')." >&2
+    exit 2
+  fi
+  case "$GVOL" in *[!A-Za-z0-9_-]*) echo "GLOBAL_VOLUME_ID looks wrong (letters, digits, - and _ expected)" >&2; exit 2 ;; esac
 fi
 VOLUME=""
 if [ "$STORAGE" = network ]; then
@@ -213,29 +219,40 @@ if e["DC"]:
 print(json.dumps(body))
 ')"
 
-if [ "$STORAGE" = global ]; then
-  echo "Pod to create IN THE WEB CONSOLE (STORAGE=global): $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter ${DC:-any} | Global Volume on /workspace | caches on the container disk"
-  echo
-  printf '%s' "$body" | python3 -c '
-import json, sys
-b = json.load(sys.stdin)
-print("Enter these values (Pods > Deploy; Secure Cloud):")
-print("  Pod name ......... %s   (must start with the pool prefix, or no script finds it)" % b["name"])
-print("  GPU .............. %dx %s%s" % (b["gpu"]["count"], b["gpu"]["id"], ", datacenter %s" % b["dataCenterIds"][0] if b.get("dataCenterIds") else ""))
-print("  Image ............ %s" % b["image"])
-print("  Start command .... leave empty (the image entrypoint reads the env below)")
-print("  Container disk ... %d GB" % b["disk"])
-print("  Storage .......... + Add volume: your Global Volume, mount path /workspace; no Network Volume")
-print("  Expose ports ..... HTTP 8000" + (", TCP 22" if "22/tcp" in b["ports"] else ""))
-print("  Env (Raw editor, one per line):")
-for k, v in b["env"].items():
-    print("    %s=%s" % (k, v))
+# STORAGE=global: the same Pod as the REST body, in the shape of GraphQL podFindAndDeployOnDemand (names taken
+# from runpod-python). cloudType and startSsh are not used by that SDK: they come from RunPod's public GraphQL
+# docs and may be rejected (a rejected request creates nothing).
+gql_vars() {
+  GVOL="${GVOL:-<GLOBAL_VOLUME_ID>}" BODY="$body" python3 -c '
+import json, os
+b = json.loads(os.environ["BODY"])
+i = {
+    "name": b["name"],
+    "imageName": b["image"],
+    "ports": ",".join(b["ports"]),
+    "containerDiskInGb": b["disk"],
+    "cloudType": "SECURE",
+    "startSsh": b["startSsh"],
+    "env": [{"key": k, "value": v} for k, v in b["env"].items()],
+    "gpuTypeIdList": [b["gpu"]["id"]],
+    "gpuCount": b["gpu"]["count"],
+    "volumeMounts": [{"volumeId": os.environ["GVOL"], "volumeType": "OBJECT_STORE_VOLUME", "mountPath": "/workspace"}],
+}
+if b.get("dataCenterIds"):
+    i["dataCenterIds"] = b["dataCenterIds"]
+print(json.dumps({"input": i}))
 '
-  echo
-  echo "Then: make verify, make wait-ready, make check (they find the Pod by its name)."
-  echo "DRY RUN: nothing was created. The API cannot attach a Global Volume, so --yes is refused with STORAGE=global."
-  exit 0
-fi
+}
+if [ "$STORAGE" = global ]; then
+  echo "Pod to create (STORAGE=global, GraphQL): $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter ${DC:-any} | Global Volume ${GVOL:-<GLOBAL_VOLUME_ID, not set>} on /workspace | disk ${DISK} GB | caches on the container disk | $([ "$ONLINE" = 1 ] && echo "downloads allowed (HF_TOKEN secret)" || echo "offline mode")"
+  gql_vars | python3 -m json.tool | sed 's/^/  /'
+  if [ "$YES" -ne 1 ]; then
+    echo
+    echo "DRY RUN: nothing was created. Add --yes to create the Pod (it bills the GPU immediately). Not run before: the first --yes may be rejected for a field name; a rejected request creates nothing."
+    echo "Instead of --yes you can enter the same values in the web console (Pods > Deploy, Global Volume on /workspace)."
+    exit 0
+  fi
+else
 
 echo "Pod to create: $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter $DC | volume $VOLUME on /workspace | disk ${DISK} GB | ssh $([ "$SSH" = 1 ] && echo on || echo off) | $([ "$ONLINE" = 1 ] && echo "downloads allowed (HF_TOKEN secret)" || echo "offline mode")"
 printf '%s' "$body" | python3 -m json.tool | sed 's/^/  /'
@@ -249,9 +266,40 @@ if [ "$YES" -ne 1 ]; then
   exit 0
 fi
 
+fi
+
 # 4. Create. Never retried automatically: a request that may have arrived must not be sent twice.
-out="$(api_post /pods "$body" 2>&1)"
-rc=$?
+if [ "$STORAGE" = global ]; then
+  gout="$(api_graphql 'mutation($input: PodFindAndDeployOnDemandInput) { podFindAndDeployOnDemand(input: $input) { id desiredStatus } }' "$(gql_vars)" 2>&1)"
+  grc=$?
+  if [ "$grc" -ne 0 ]; then
+    printf '%s\n' "$gout" >&2
+    echo >&2
+    api_auth_hint "$gout" && exit 1
+    case "$(printf '%s' "$gout" | head -n1)" in
+      "GraphQL error:"*)
+        # The server answered with an error: nothing was created. Only "no capacity" is retryable.
+        if printf '%s' "$gout" | grep -qiE "instances available|no capacity|out of capacity|does not have the resources"; then
+          echo "There is no capacity for ${GPU_COUNT}x $GPU_ID (${DC:-any datacenter}) right now. Nothing was created (see the message above). Try again later." >&2; exit 5
+        fi
+        echo "The API rejected the request (see the message above). Nothing was created. A field name may be wrong: this request shape was never run before." >&2; exit 1 ;;
+      "HTTP 402"*) echo "Insufficient balance. Nothing was created." >&2; exit 1 ;;
+      "HTTP 400"*|"HTTP 422"*) echo "The request failed validation (see above). Nothing was created." >&2; exit 1 ;;
+      "HTTP 429"*|"HTTP 5"*) echo "The API answered with a server error or is throttling. Whether a Pod was created is NOT certain: check scripts/v2-smoke.sh before retrying." >&2; exit 1 ;;
+      *) echo "The connection failed while the request may already have been sent: the outcome is UNKNOWN and a Pod may exist (and bill). Check before retrying: scripts/v2-smoke.sh" >&2; exit 1 ;;
+    esac
+  fi
+  # same shape as the REST answer from here on: {"id": ...}
+  out="$(printf '%s' "$gout" | python3 -c 'import json,sys
+try:
+    print(json.dumps({"id": json.load(sys.stdin)["podFindAndDeployOnDemand"]["id"]}))
+except Exception:
+    print("{}")')"
+  rc=0
+else
+  out="$(api_post /pods "$body" 2>&1)"
+  rc=$?
+fi
 if [ "$rc" -ne 0 ]; then
   printf '%s\n' "$out" >&2
   echo >&2
@@ -341,9 +389,9 @@ fi
 cmd="RUNPOD_POD_ID=$new_id scripts/pod-terminate.sh --yes"
 if [ "$terminated" -eq 1 ]; then
   if [ "$TERMINATE_ON_FAIL" -eq 1 ]; then
-    echo "It was TERMINATED (--terminate-on-fail); the Network Volume is untouched." >&2
+    echo "It was TERMINATED (--terminate-on-fail); the volume is untouched." >&2
   else
-    echo "Stopping and renaming did not both work, so it was TERMINATED instead (stopped: $([ $stopped -eq 1 ] && echo yes || echo no), renamed: $([ $renamed -eq 1 ] && echo yes || echo no)). The Network Volume is untouched." >&2
+    echo "Stopping and renaming did not both work, so it was TERMINATED instead (stopped: $([ $stopped -eq 1 ] && echo yes || echo no), renamed: $([ $renamed -eq 1 ] && echo yes || echo no)). The volume is untouched." >&2
   fi
 elif [ "$stopped" -eq 1 ] && [ "$renamed" -eq 1 ]; then
   echo "It was STOPPED (billing ended) and renamed to '$failed_name', so it is no longer part of the pool. Inspect it, then remove it: $cmd" >&2

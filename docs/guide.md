@@ -127,6 +127,7 @@ All optional unless marked. A value exported in your shell wins over the same na
 | `VLLM_API_KEY` | – (required) | key vLLM enforces; same value as the RunPod Secret |
 | `NETWORK_VOLUME_ID` | – (required to create) | id of your Network Volume (not used with `STORAGE=global`) |
 | `STORAGE` | `network` | `global`: model on a Global Volume, caches on the container disk; see [Global Volume](#global-volume-beta-untested) |
+| `GLOBAL_VOLUME_ID` | – (required with `STORAGE=global` to create) | id of your Global Volume, printed by `make volume ARGS='--global --yes'` |
 | `HF_HOME_DIR` / `VLLM_CACHE_DIR` | under `/workspace` (network), under `/root/.cache` (global) | Hugging Face home and vLLM cache inside the Pod |
 | `REMOTE_IMAGE` | – (required to create) | Pod image, ideally by digest. The arm64/sm121 DGX Spark image is refused |
 | `RUNPOD_POD_ID` | – | fallback Pod for single-Pod scripts; the active pool Pod wins |
@@ -190,16 +191,23 @@ on the container disk. Without a Network Volume nothing binds the Pod to a datac
 - **Price:** $0.09/GB/month for what is stored (no size to book), plus requests: $0.005 per 1,000 writes
   and lists, $0.0005 per 1,000 reads. The model (about 110 GB) is about $9.90 a month. Reading it once is
   between about 14,000 and 110,000 requests, depending on the block size: well under 10 cents.
-- **The API cannot attach it.** Neither REST v2 nor v1 has a field for a Global Volume (checked in both
-  OpenAPI specs on 2026-10-04). So the volume and the Pod are created **in the web console**; `make create`
-  prints the values to enter, and `--yes` is refused. `make start` only restarts existing pool Pods then.
-  Everything that reads or starts an existing Pod works as usual: `make verify`, `wait-ready`, `check`,
-  `stop`, `pod-start`, `logs`.
+- **REST cannot attach it, GraphQL can.** Neither REST v2 nor v1 has a field for a Global Volume (checked in
+  both OpenAPI specs on 2026-10-04). The official `runpod-python` SDK uses GraphQL instead: `globalStoreBuckets`
+  and `globalStoreBucketCreate` for the volume, `podFindAndDeployOnDemand` with a `volumeMounts` entry of type
+  `OBJECT_STORE_VOLUME` for the Pod. This repo does the same (`make volume ARGS=--global`, `make create`). RunPod
+  announced that GraphQL is retired in early 2027; the web console works as a fallback, and `make create`
+  without `--yes` prints the values. Everything that reads or starts an existing Pod works as usual
+  (`make verify`, `wait-ready`, `check`, `stop`, `pod-start`, `logs`).
+- **What was checked, what not:** reading the volumes works with this repo's key. The Pod request was checked
+  against the live API with a deliberately invalid probe (two invented fields, a GPU that does not exist): the
+  API named only the invented fields, so every real field name is valid, and nothing was created. **Not yet run:
+  a real Pod**, the `{{ RUNPOD_SECRET_... }}` references through GraphQL, and `dataCenterIds`.
 - **If the balance reaches $0** the volume is flagged and deleted after 15 days.
 
 **Setting it up:**
 
-1. Console: Storage > New volume > **Global volume**, name `qwen3.8-flash-next`.
+1. `make volume ARGS='--global'` (dry run), then `make volume ARGS='--global --yes'`: it prints
+   `GLOBAL_VOLUME_ID=...` for `.env`. (Or in the console: Storage > New volume > **Global volume**.)
 2. Fill it once. Global Volumes attach to GPU Pods only, so deploy the cheapest GPU Pod with a standard
    PyTorch template, a **150 GB container disk** and the Global Volume on `/workspace`. In its terminal:
    ```bash
@@ -216,14 +224,15 @@ on the container disk. Without a Network Volume nothing binds the Pod to a datac
 3. In `.env`:
    ```
    STORAGE=global
+   GLOBAL_VOLUME_ID=<id from step 1>
    MODEL=/workspace/models/qwen3.8-flash-next-nvfp4
    ```
    `NETWORK_VOLUME_ID` is not needed. `make precheck` checks the combination.
-4. `make create` (no `--yes`) prints the Pod name, GPU, image, disk, port and every env variable. Enter them
-   in the console (Pods > Deploy, Secure Cloud, the Global Volume on `/workspace`, no Network Volume, start
-   command empty). The name must start with `POOL_PREFIX`, or no script finds the Pod.
-5. `make verify`, then `make wait-ready` and `make check`. `verify` cannot see the Global Volume (the API
-   does not report it) and says so; it fails if a cache path points to `/workspace`.
+4. `make create` (dry run) prints the GraphQL request: Pod name, GPU, image, disk, port, every env variable
+   and the volume mount. `make create ARGS='--yes'` sends it and bills the GPU at once. The first one may be
+   rejected for a reason the probe could not show; a rejected request creates nothing.
+5. `make verify`, then `make wait-ready` and `make check`. `verify` reads the Pod through REST, which does not
+   report a Global Volume, so it cannot see it and says so; it fails if a cache path points to `/workspace`.
 
 **Still open:** how fast the weights load from a Global Volume (today's Network Volume: about 150 MB/s on a
 cold host), and whether `PLE_MMAP=1` works well when the PLE table is read from object storage.
