@@ -93,7 +93,7 @@ smoke: build ## Quick smoke test of the RunPod v2 API client
 gpu: build ## Show current GPU stock (ARGS='TYPE DATACENTER' to filter, e.g. ARGS='B200 EU-NL-1')
 	$(DOCKER_RUN) bash scripts/gpu-availability.sh $(ARGS); rc=$$?; echo "$$rc" > "$(CURDIR)/.make-exit-code.gpu"; \
 	  [ "$$rc" -ne 2 ] || exit 0; exit "$$rc"
-volume: build ## Network Volume: ARGS='--list', or ARGS='--dc EU-RO-1 [--yes]' to create (150 GB, billed until deleted)
+volume: build ## Volumes: ARGS='--list' / ARGS='--dc EU-RO-1 [--yes]' (Network, 150 GB) / ARGS='--global [--list|--yes]' (Global, beta)
 	$(DOCKER_RUN) bash scripts/create-volume.sh $(ARGS)$(call CAPTURE,volume)
 wait-gpu: build ## Poll GPU stock until the requested GPU is available
 	$(DOCKER_RUN) bash scripts/wait-for-gpu.sh $(ARGS)$(call CAPTURE,wait-gpu)

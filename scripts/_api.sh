@@ -35,6 +35,36 @@ EOT
   printf '%s' "$body"
 }
 
+# api_graphql QUERY [VARIABLES_JSON]: one GraphQL call (POST). Only for what REST v2 lacks (Global Volumes,
+# see scripts/_storage.sh). GraphQL answers HTTP 200 even for errors, so a response with an "errors" field is
+# a failure here: the messages go to stderr, return 1. On success prints the "data" object as JSON.
+# RUNPOD_GRAPHQL_URL overrides the endpoint (default https://api.runpod.io/graphql). The GraphQL API is
+# announced to be retired in early 2027.
+api_graphql() {
+  local query="$1" vars="${2:-}" payload resp
+  payload="$(QUERY="$query" VARS="$vars" python3 -c '
+import json, os
+v = os.environ.get("VARS") or "{}"
+print(json.dumps({"query": os.environ["QUERY"], "variables": json.loads(v)}))
+')" || { echo "api_graphql: bad variables JSON" >&2; return 1; }
+  if ! resp="$(BASE="${RUNPOD_GRAPHQL_URL:-https://api.runpod.io/graphql}" _api_request POST "" "$payload")"; then
+    return 1
+  fi
+  printf '%s' "$resp" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("The GraphQL response was not JSON.", file=sys.stderr); sys.exit(1)
+errs = d.get("errors") if isinstance(d, dict) else None
+if errs or not isinstance(d, dict) or d.get("data") is None:
+    for e in (errs or [{"message": "no data in the response"}]):
+        print("GraphQL error: %s" % (e.get("message", e) if isinstance(e, dict) else e), file=sys.stderr)
+    sys.exit(1)
+print(json.dumps(d["data"]))
+'
+}
+
 # api_get PATH: read-only GET.
 api_get() { _api_request GET "$1"; }
 

@@ -8,6 +8,10 @@
 #
 # Usage: create-volume.sh --dc DATACENTER [--size GB] [--name NAME] [--type TIER] [--yes]
 #        create-volume.sh --list
+#        create-volume.sh --global [--name NAME] [--list] [--yes]
+#   --global          work on GLOBAL Volumes (beta, GraphQL: REST has no endpoint for them): list them, or
+#                     create one. No datacenter and no size: it grows with the data, $0.09/GB/month for what is
+#                     stored plus request charges, and it is deleted after 15 days at a balance of $0.
 #   --dc DATACENTER   REQUIRED (or DATACENTER in .env): where the volume lives. The Pod is always placed
 #                     in the volume's datacenter, so pick one with stock of your GPU (see `make gpu`).
 #   --size GB         default 150 (VOLUME_SIZE_GB): the model is 109.23 GB plus a few GB of vLLM cache
@@ -26,7 +30,7 @@ HERE="$(dirname "$0")"
 # shellcheck source=scripts/_api.sh
 source "$HERE/_api.sh"
 
-YES=0; LIST=0
+YES=0; LIST=0; GLOBAL=0
 DC="${DATACENTER:-}"
 SIZE="${VOLUME_SIZE_GB:-150}"
 NAME="${VOLUME_NAME:-qwen3.8-flash-next}"
@@ -35,6 +39,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --yes) YES=1 ;;
     --list) LIST=1 ;;
+    --global) GLOBAL=1 ;;
     --dc|--size|--name|--type)
       [ "$#" -ge 2 ] || { echo "$1 needs a value" >&2; exit 2; }
       case "$1" in --dc) DC="$2" ;; --size) SIZE="$2" ;; --name) NAME="$2" ;; --type) TYPE="$2" ;; esac
@@ -69,6 +74,71 @@ for v in vols:
         print("\t".join((f(v, "id"), f(v, "name"), f(v, "size"), f(v, "dataCenter", "dataCenterId"), f(v, "type"))))
 '
 }
+
+# ---- Global Volumes (GraphQL): globalStoreBuckets / globalStoreBucketCreate
+if [ "$GLOBAL" -eq 1 ]; then
+  list_global() {   # prints "id<TAB>name" per bucket; on failure the message goes to stdout, return 1
+    local resp
+    resp="$(api_graphql 'query { myself { globalStoreBuckets { id name } } }' 2>&1)" || { printf '%s\n' "$resp"; return 1; }
+    printf '%s' "$resp" | python3 -c '
+import json, sys
+try:
+    bs = json.load(sys.stdin)["myself"]["globalStoreBuckets"]
+    assert isinstance(bs, list)
+except Exception:
+    print("unexpected response shape"); sys.exit(1)
+for b in bs:
+    if isinstance(b, dict):
+        print("%s\t%s" % (" ".join(str(b.get("id", "?")).split()), " ".join(str(b.get("name", "?")).split())))
+' || return 1
+  }
+  gvols="$(list_global)" || { printf '%s\n' "$gvols" >&2; echo "Could not list the Global Volumes." >&2; exit 1; }
+  if [ "$LIST" -eq 1 ]; then
+    if [ -z "$gvols" ]; then echo "No Global Volumes."; exit 0; fi
+    printf '%-30s %s\n' ID NAME
+    printf '%s\n' "$gvols" | while IFS=$'\t' read -r i n; do printf '%-30s %s\n' "$i" "$n"; done
+    exit 0
+  fi
+  [ -n "$NAME" ] || { echo "--name must not be empty" >&2; exit 2; }
+  if printf '%s\n' "$gvols" | cut -f2 | grep -Fxq -- "$NAME"; then
+    echo "A Global Volume named '$NAME' already exists:" >&2
+    printf '%s\n' "$gvols" | awk -F'\t' -v n="$NAME" '$2 == n { printf "  %s  %s\n", $1, $2 }' >&2
+    echo "Nothing was created. Use that one (put its ID in .env as GLOBAL_VOLUME_ID), or pass another --name." >&2
+    exit 3
+  fi
+  gbody="$(NAME="$NAME" python3 -c 'import json, os; print(json.dumps({"input": {"name": os.environ["NAME"]}}))')"
+  echo "Global Volume to create: $NAME (GraphQL globalStoreBucketCreate)"
+  printf '%s' "$gbody" | python3 -m json.tool | sed 's/^/  /'
+  echo "  Cost: \$0.09/GB/month for what is stored (the model is about 110 GB, so about \$9.90), plus \$0.005 per 1,000 writes/lists and \$0.0005 per 1,000 reads. Nothing is billed while it is empty."
+  echo "  Beta: no file locks, no atomic rename; deleted 15 days after the balance reaches \$0."
+  if [ "$YES" -ne 1 ]; then
+    echo
+    echo "DRY RUN: nothing was created. Add --yes to create the volume."
+    exit 0
+  fi
+  out="$(api_graphql 'mutation($input: GlobalStoreBucketCreateInput!) { globalStoreBucketCreate(input: $input) { id name } }' "$gbody" 2>&1)"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$out" >&2
+    echo >&2
+    api_auth_hint "$out" && exit 1
+    echo "Creation failed or its outcome is unknown. Check before retrying: make volume ARGS='--global --list'" >&2
+    exit 1
+  fi
+  new_gid="$(printf '%s' "$out" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin)["globalStoreBucketCreate"]["id"])
+except Exception:
+    print("")')"
+  if [ -z "$new_gid" ]; then
+    echo "The request was accepted but the response had no volume id. Find it: make volume ARGS='--global --list'" >&2
+    exit 1
+  fi
+  echo
+  echo "Created Global Volume $new_gid ($NAME)."
+  echo "Add this to your .env:  GLOBAL_VOLUME_ID=$new_gid"
+  exit 0
+fi
 
 if [ "$LIST" -eq 1 ]; then
   vols="$(list_volumes)" || { printf '%s\n' "$vols" >&2; api_auth_hint "$vols" && exit 1; echo "Could not list the Network Volumes." >&2; exit 1; }
