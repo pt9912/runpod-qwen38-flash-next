@@ -5,6 +5,14 @@ installs `serve-b200` as the entrypoint (it reads `MODEL`, `SERVED_MODEL_NAME`, 
 `SEQS`, `MTP`, `CACHE`, `MMAP`, `PREWARM`, `TP` (tensor-parallel size, default 1),
 `VLLM_EXTRA_ARGS` (appended last), which `create-pod.sh` sets on the Pod).
 
+**Download at start (`PREFETCH_REPO`, new after `:3`).** If `PREFETCH_REPO` (a Hugging Face repo id) is set,
+`serve-b200` first downloads that repo at `PREFETCH_REVISION` (default `main`) into the directory `MODEL`
+(which must then be an absolute path), removes the download bookkeeping, and writes `.prefetch-complete`; a
+directory that already has the marker is not downloaded again, and an interrupted download resumes. This is what
+`STORAGE=local` in `create-pod.sh` uses (no volume; the 109 GB took 1.5 to 5 minutes on RunPod). The published
+`:3` does not have it: build and push a new tag (for example `:4`) and pin its digest in `REMOTE_IMAGE`.
+Tested with stubs only; no image with this change has been built or run on a GPU.
+
 ```bash
 IMAGE=docker.io/YOU/vllm-qwen38-b200:1 ./build.sh
 docker push docker.io/YOU/vllm-qwen38-b200:1      # then pin REMOTE_IMAGE by digest in ../.env

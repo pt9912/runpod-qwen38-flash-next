@@ -17,15 +17,16 @@ and says so.
 4. [First time setup](#first-time-setup)
 5. [Settings (`.env`)](#settings-env)
 6. [Network Volume](#network-volume)
-7. [Global Volume (beta, untested)](#global-volume-beta-untested)
-8. [Create, verify, check](#create-verify-check)
-9. [Day to day: start, stop, terminate](#day-to-day-start-stop-terminate)
-10. [Logs and troubleshooting](#logs-and-troubleshooting)
-11. [Memory, context and concurrency](#memory-context-and-concurrency)
-12. [GPUs and what was validated](#gpus-and-what-was-validated)
-13. [Claude Code](#claude-code)
-14. [The Pod pool](#the-pod-pool)
-15. [Building your own image](#building-your-own-image)
+7. [Global Volume (beta, works, but slow)](#global-volume-beta-works-but-slow)
+8. [Local storage: download at start](#local-storage-download-at-start)
+9. [Create, verify, check](#create-verify-check)
+10. [Day to day: start, stop, terminate](#day-to-day-start-stop-terminate)
+11. [Logs and troubleshooting](#logs-and-troubleshooting)
+12. [Memory, context and concurrency](#memory-context-and-concurrency)
+13. [GPUs and what was validated](#gpus-and-what-was-validated)
+14. [Claude Code](#claude-code)
+15. [The Pod pool](#the-pod-pool)
+16. [Building your own image](#building-your-own-image)
 
 ## Architecture
 
@@ -126,7 +127,8 @@ All optional unless marked. A value exported in your shell wins over the same na
 | `RUNPOD_API_KEY` | – (required) | RunPod API key |
 | `VLLM_API_KEY` | – (required) | key vLLM enforces; same value as the RunPod Secret |
 | `NETWORK_VOLUME_ID` | – (required to create) | id of your Network Volume (not used with `STORAGE=global`) |
-| `STORAGE` | `network` | `global`: model on a Global Volume, caches on the container disk; see [Global Volume](#global-volume-beta-untested) |
+| `STORAGE` | `network` | `local`: no volume, the Pod downloads the model at start ([Local storage](#local-storage-download-at-start), recommended); `global`: model on a Global Volume, caches on the container disk ([Global Volume](#global-volume-beta-works-but-slow), slow) |
+| `MODEL_REPO` / `MODEL_REVISION` | repo / validated commit | with `STORAGE=local`: Hugging Face repo and commit to download (`MODEL_REPO` only when `MODEL` is a directory) |
 | `GLOBAL_VOLUME_ID` | – (required with `STORAGE=global` to create) | id of your Global Volume, printed by `make volume ARGS='--global --yes'` |
 | `HF_HOME_DIR` / `VLLM_CACHE_DIR` | under `/workspace` (network), under `/root/.cache` (global) | Hugging Face home and vLLM cache inside the Pod |
 | `REMOTE_IMAGE` | – (required to create) | Pod image, ideally by digest. The arm64/sm121 DGX Spark image is refused |
@@ -175,10 +177,20 @@ created; to change one, terminate the Pod and create a new one.
 - **One Pod at a time:** two Pods that share a volume share `/workspace/vllm-cache`; the pool guards
   refuse a second active pool Pod.
 
-## Global Volume (beta, untested)
+## Global Volume (beta, works, but slow)
 
-**Not run yet.** Everything here comes from RunPod's documentation (checked 2026-10-04) and from this
-repo's dry runs; no Pod has served the model from a Global Volume.
+**Run once on 2026-10-10, single observations; not recommended.** It works, but vLLM reads the weights from
+a Global Volume far more slowly than the model downloads from Hugging Face (see
+[Local storage](#local-storage-download-at-start), which is the better choice):
+
+| Step | Measured |
+|---|---|
+| Download of the 109.23 GB from Hugging Face onto a Pod's container disk (with `HF_TOKEN`) | 1 min 32 s and 4 min 48 s (two runs) |
+| Copy onto the Global Volume (written, then verified file by file) | about 13 min |
+| vLLM loading the 133 shards from the volume (H200, `PLE_MMAP=1`, US-NC-1) | first shards 25 s, 67 s and 54 s, then 13 to 18 s each; vLLM's own estimate 24 to 29 min; **stopped at shard 40 of 133 after 12 min**, so no full start was timed |
+
+For comparison, loading from a Network Volume took 2 to 11 minutes (see [startup times](startup-times.md)).
+The Global Volume was deleted after the test.
 
 A Global Volume is not bound to a datacenter: a Pod in any datacenter can mount it, so a free GPU anywhere
 will do. With `STORAGE=global` the volume holds **only the model**; the Hugging Face and vLLM caches stay
@@ -198,10 +210,10 @@ on the container disk. Without a Network Volume nothing binds the Pod to a datac
   announced that GraphQL is retired in early 2027; the web console works as a fallback, and `make create`
   without `--yes` prints the values. Everything that reads or starts an existing Pod works as usual
   (`make verify`, `wait-ready`, `check`, `stop`, `pod-start`, `logs`).
-- **What was checked, what not:** reading the volumes works with this repo's key. The Pod request was checked
-  against the live API with a deliberately invalid probe (two invented fields, a GPU that does not exist): the
-  API named only the invented fields, so every real field name is valid, and nothing was created. **Not yet run:
-  a real Pod**, the `{{ RUNPOD_SECRET_... }}` references through GraphQL, and `dataCenterIds`.
+- **What was checked:** the Pod request was first checked against the live API with a deliberately invalid probe
+  (two invented fields, a GPU that does not exist): the API named only the invented fields. Then it ran for real:
+  the Pod was created through GraphQL, the volume was mounted at `/workspace`, the `{{ RUNPOD_SECRET_... }}`
+  reference for `VLLM_API_KEY` was accepted, vLLM found the model and applied the PLE mmap patch.
 - **If the balance reaches $0** the volume is flagged and deleted after 15 days.
 
 **Setting it up:**
@@ -217,8 +229,9 @@ on the container disk. Without a Network Volume nothing binds the Pod to a datac
    If the script dies hard (`make abort` uses `docker kill`), the Pod ends by itself after `FILL_TIMEOUT`
    (7200 s) at the latest; check with `make smoke`. Settings, all optional (`FILL_*`; see `.env.example`): (`FILL_GPU_IDS`,
    `FILL_REVISION`, `FILL_TARGET`, `FILL_DISK_GB`, `FILL_TIMEOUT`); `--token` injects the `HF_TOKEN` secret.
-   **Not run yet**; the in-Pod script was tested in a `python:3.12-slim` container with a stubbed download
-   (success, repeat, and a tampered copy that must fail).
+   Ran on 2026-10-10 (the Pod's script was first tested in a `python:3.12-slim` container with a stubbed download).
+   The first live run failed although the data had arrived: `cp` sets permission bits after each file, which a
+   Global Volume refuses (`Operation not permitted`); the script now copies with `shutil.copyfile`.
 3. In `.env`:
    ```
    STORAGE=global
@@ -227,15 +240,40 @@ on the container disk. Without a Network Volume nothing binds the Pod to a datac
    ```
    `NETWORK_VOLUME_ID` is not needed. `make precheck` checks the combination.
 4. `make create` (dry run) prints the GraphQL request: Pod name, GPU, image, disk, port, every env variable
-   and the volume mount. `make create ARGS='--yes'` sends it and bills the GPU at once. The first one may be
-   rejected for a reason the probe could not show; a rejected request creates nothing.
+   and the volume mount. `make create ARGS='--yes'` sends it and bills the GPU at once. It worked at the first try
+   (a rejected request would have created nothing).
 5. `make verify`, then `make wait-ready` and `make check`. `verify` reads the Pod through REST, which does not
    report a Global Volume, so it cannot see it and says so; it fails if a cache path points to `/workspace`.
 
-**Still open:** how fast the weights load from a Global Volume (today's Network Volume: about 150 MB/s on a
-cold host), and whether `PLE_MMAP=1` works well when the PLE table is read from object storage.
+Deleting a Global Volume is not possible through the API (the SDK has no delete call): use the console, Storage.
 
-## Create, verify, check
+## Local storage: download at start
+
+`STORAGE=local` uses **no volume**. The Pod downloads the model from Hugging Face onto its container disk every
+time it starts, and the caches live there too. The image entrypoint does it (`PREFETCH_REPO`, see
+`image/serve-b200.sh`), so it needs an image newer than `:3`: build and push it (`image/README.md`) and put
+the digest into `REMOTE_IMAGE`.
+
+- **Why:** on RunPod the 109.23 GB download took 1.5 to 5 minutes (two measurements, with `HF_TOKEN`); vLLM then
+  reads from local NVMe. Reading the same files from a Global Volume took about 30 minutes or more, from a Network
+  Volume 2 to 11. Nothing is bound to a datacenter, nothing bills while no Pod runs, and there is no volume
+  to forget (a Global Volume holding the model bills about $9.90 a month even while no Pod runs).
+- **Price of the larger container disk:** the default is 200 GB (`CONTAINER_DISK_GB`; at least 150 is
+  enforced): 50 GB cost $0.007/h, so 200 GB cost about $0.028/h while the Pod runs, under 1 % of an H200.
+- **Every start downloads again:** the container disk does not outlive the Pod. Stop/start and a new Pod
+  both download first (the entrypoint skips the download only if the same container already has the
+  marker `.prefetch-complete`; an interrupted download resumes). Plan for the download time on top of
+  the image pull and the load. If Hugging Face is slow or down at that moment, the start is slow or fails.
+- **Settings:** `STORAGE=local` in `.env`; `MODEL` is a Hugging Face id (default, downloaded to
+  `/models/<name>`) or an absolute directory (then `MODEL_REPO` names the repo); `MODEL_REVISION` pins the
+  commit (default the one validated here). The `HF_TOKEN` RunPod Secret is injected (faster downloads, higher
+  limits). `make create` prints the request; `make verify` checks the download settings and fails if
+  `HF_HUB_OFFLINE=1` would block the download.
+- **Status:** the entrypoint change and the scripts were tested with stubs (fresh download, repeat that
+  skips, failed download, refusal of a non-local `MODEL`, a Pod check against a fake API); **no image with
+  it has been built or run on a GPU yet**.
+
+## Create, verify, check## Create, verify, check
 
 ```bash
 make create                      # dry run: prints the request and the stock, creates nothing

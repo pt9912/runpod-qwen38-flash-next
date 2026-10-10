@@ -34,6 +34,13 @@ Draft-Gewichte 12,5 s; `torch.compile` brauchte nur 0,76 s und 4,2 s, weil der C
 vollständig war. Die drei Starts bisher: 5 min 26 s, 15 min 58 s und 10 min 10 s. Die Streuung kommt fast ganz vom Lesen
 der Gewichte vom Volume (110 s, 674 s, 481 s); rechne bei einem neuen Pod also mit **10 bis 16 Minuten**.
 
+**Vom Global Volume und von Hugging Face** (2026-10-10, Einzelmessungen, H200 in US-NC-1, `PLE_MMAP=1`):
+Das Laden der 133 Shards vom Global Volume dauerte nach einem langsamen Anfang (25, 67 und 54 s für die ersten drei)
+je 13 bis 18 s; vLLM schätzte für den Rest 24 bis 29 Minuten. Es wurde **bei Shard 40 nach 12 Minuten abgebrochen**,
+ein vollständiger Start wurde also nicht gemessen. Der Download der 109,23 GB von Hugging Face auf die Container-Disk
+eines Pods (mit `HF_TOKEN`) dauerte in zwei Läufen **1 min 32 s** und **4 min 48 s**, das Kopieren aufs Global Volume
+etwa 13 Minuten. Was daraus folgt, steht im [Guide](guide.de.md#lokaler-speicher-download-beim-start).
+
 **Was in diesen Zahlen nicht steckt:** das Ziehen des Pod-Images (8,67 GB komprimiert) auf den Host und der
 Start des Containers, das vor der ersten vLLM-Logzeile passiert. Es wurde nicht gemessen: Die Uhr oben
 beginnt bei der ersten vLLM-Logzeile, nicht beim `startedAt` des Pods. Ebenfalls nicht gemessen: ein

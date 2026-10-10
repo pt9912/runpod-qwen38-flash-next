@@ -16,7 +16,10 @@
 #              keys registered in your RunPod account and an sshd in the image (not verified for this image).
 #              The environment variable CREATE_POD_SSH=1 does the same (start-any.sh passes it on).
 # Environment (all optional):
-#   STORAGE             network (default) or global; see scripts/_storage.sh. With global, the model is on a
+#   STORAGE             network (default), global or local; see scripts/_storage.sh. With local there is no volume:
+#                       the Pod downloads the model from Hugging Face at every start (needs an image with
+#                       PREFETCH_REPO support, image/serve-b200.sh) and runs in any datacenter.
+#                       With global, the model is on a
 #                       Global Volume (GLOBAL_VOLUME_ID, see `make volume ARGS=--global`) and the caches on the
 #                       container disk. REST v2 cannot attach a Global Volume, so the Pod is created through
 #                       GraphQL (podFindAndDeployOnDemand, as runpod-python does; announced to be retired in
@@ -88,7 +91,8 @@ POD_NAME="${POD_NAME:-qwen3.8-flash-next}"
 GPU_ID="${GPU_ID:-NVIDIA B200}"
 GPU_COUNT="${GPU_COUNT:-1}"
 case "$GPU_COUNT" in [1-8]) ;; *) echo "GPU_COUNT must be a whole number from 1 to 8" >&2; exit 2 ;; esac
-DISK="${CONTAINER_DISK_GB:-50}"
+DISK_DEFAULT=50; [ "$STORAGE" != local ] || DISK_DEFAULT=200
+DISK="${CONTAINER_DISK_GB:-$DISK_DEFAULT}"
 case "$DISK" in ''|*[!0-9]*) echo "CONTAINER_DISK_GB must be a whole number" >&2; exit 2 ;; esac
 case "$POD_NAME" in
   "$POOL_PREFIX"*) ;;
@@ -144,6 +148,12 @@ case "$IMAGE" in
   *jstarkg/vllm-gb10*|*sm121*) echo "REMOTE_IMAGE '$IMAGE' is the arm64/sm121 (DGX Spark) image: it cannot run on a B200." >&2; exit 2 ;;
 esac
 MODEL="${MODEL:-starkweatherdigital/qwen3.8-flash-next-nvfp4}"
+PREFETCH_REPO=""; PREFETCH_REVISION=""
+if [ "$STORAGE" = local ]; then
+  storage_resolve_model
+  ONLINE=1   # the Pod downloads: the HF_TOKEN secret is injected and HF_HUB_OFFLINE is not set
+  [ "$DISK" -ge 150 ] || { echo "STORAGE=local needs CONTAINER_DISK_GB of at least 150 (the model is 102 GiB, the image about 20 GB; 200 is the default)." >&2; exit 2; }
+fi
 CTX="${MAX_MODEL_LEN:-131072}"
 case "$CTX" in ''|*[!0-9]*) echo "MAX_MODEL_LEN must be a whole number" >&2; exit 2 ;; esac
 SEQS="${MAX_NUM_SEQS:-16}"
@@ -170,6 +180,7 @@ if [ "$MMAP" = 1 ]; then
   esac
 fi
 body="$(HF_HOME_DIR="$HF_HOME_DIR" VLLM_CACHE_DIR="$VLLM_CACHE_DIR" POD_NAME="$POD_NAME" GPU_ID="$GPU_ID" GPU_COUNT="$GPU_COUNT" VOLUME="$VOLUME" DC="$DC" DISK="$DISK" ONLINE="$ONLINE" SSH="$SSH" \
+  PREFETCH_REPO="$PREFETCH_REPO" PREFETCH_REVISION="$PREFETCH_REVISION" \
   IMAGE="$IMAGE" MODEL="$MODEL" CTX="$CTX" SEQS="$SEQS" MMAP="$MMAP" YARN="$YARN" GPU_MEM="${GPU_MEMORY_UTILIZATION:-0.90}" \
   VSEC="${VLLM_SECRET_NAME:-VLLM_API_KEY}" HSEC="${HF_SECRET_NAME:-HF_TOKEN}" python3 -c '
 import json, os
@@ -196,6 +207,9 @@ env = {
 }
 if e.get("YARN"):
     env["YARN_FACTOR"] = e["YARN"]
+if e.get("PREFETCH_REPO"):
+    env["PREFETCH_REPO"] = e["PREFETCH_REPO"]
+    env["PREFETCH_REVISION"] = e["PREFETCH_REVISION"]
 if e.get("VLLM_EXTRA_ARGS"):
     env["VLLM_EXTRA_ARGS"] = e["VLLM_EXTRA_ARGS"]
 if e["ONLINE"] == "1":
@@ -254,13 +268,17 @@ if [ "$STORAGE" = global ]; then
   fi
 else
 
+if [ "$STORAGE" = local ]; then
+  echo "Pod to create: $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter ${DC:-any} | NO volume: downloads $PREFETCH_REPO @ ${PREFETCH_REVISION:0:8} to $MODEL at every start | disk ${DISK} GB | ssh $([ "$SSH" = 1 ] && echo on || echo off) | downloads allowed (HF_TOKEN secret)"
+else
 echo "Pod to create: $POD_NAME | ${GPU_COUNT}x $GPU_ID | datacenter $DC | volume $VOLUME on /workspace | disk ${DISK} GB | ssh $([ "$SSH" = 1 ] && echo on || echo off) | $([ "$ONLINE" = 1 ] && echo "downloads allowed (HF_TOKEN secret)" || echo "offline mode")"
+fi
 printf '%s' "$body" | python3 -m json.tool | sed 's/^/  /'
 
 if [ "$YES" -ne 1 ]; then
   echo
-  echo "Stock of $GPU_ID in $DC (a hint, not a reservation):"
-  "$HERE/gpu-availability.sh" "$GPU_ID" "$DC" 2>&1 | sed 's/^/  /'
+  echo "Stock of $GPU_ID${DC:+ in $DC} (a hint, not a reservation):"
+  "$HERE/gpu-availability.sh" "$GPU_ID" ${DC:+"$DC"} 2>&1 | sed 's/^/  /'
   echo
   echo "DRY RUN: nothing was created. Add --yes to create the Pod (it bills the GPU immediately)."
   exit 0

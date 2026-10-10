@@ -33,6 +33,13 @@ startup complete` 09:10:49 UTC, **10 min 10 s (610 s)**. Loading the main weight
 far: 5 min 26 s, 15 min 58 s and 10 min 10 s. The spread comes almost entirely from reading the weights from the volume
 (110 s, 674 s, 481 s), so treat **10 to 16 minutes** as the realistic range for a new Pod.
 
+**From a Global Volume and from Hugging Face** (2026-10-10, single observations, H200 in US-NC-1, `PLE_MMAP=1`):
+vLLM loading the 133 shards from a Global Volume took 13 to 18 s each after a slow start (25, 67 and 54 s for the
+first three), with vLLM estimating 24 to 29 minutes for the rest; it was **stopped at shard 40 after 12 minutes**, so
+no complete start was timed. Downloading the 109.23 GB from Hugging Face onto a Pod's container disk (with `HF_TOKEN`)
+took **1 min 32 s** and **4 min 48 s** on two runs, copying them onto the Global Volume about 13 minutes. See the
+[guide](guide.md#local-storage-download-at-start) for what follows from this.
+
 **What is not in these numbers:** pulling the Pod image (8.67 GB compressed) onto the host and starting
 the container, which happens before vLLM's first log line. It was not measured: the clock above starts at
 vLLM's first log line, not at the Pod's `startedAt`. Also not measured: a restart of a stopped Pod on its

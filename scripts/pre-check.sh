@@ -74,7 +74,14 @@ case "${STORAGE:-network}" in
     esac
     [ -z "${NETWORK_VOLUME_ID:-}" ] || warn "NETWORK_VOLUME_ID is set but STORAGE=global does not use it"
     ;;
-  *) fail "STORAGE must be 'network' or 'global' (is '${STORAGE}')" ;;
+  local)
+    ok "STORAGE=local: no volume; the Pod downloads the model from Hugging Face at every start (needs an image with PREFETCH_REPO support)"
+    [ -z "${NETWORK_VOLUME_ID:-}${GLOBAL_VOLUME_ID:-}" ] || warn "NETWORK_VOLUME_ID / GLOBAL_VOLUME_ID are set but STORAGE=local does not use them"
+    case "${REMOTE_IMAGE:-}" in
+      *:3|*@sha256:26650509*) warn "REMOTE_IMAGE looks like the published :3, which has no PREFETCH_REPO support: the Pod would not find the model. Build and push a newer image (image/README.md)." ;;
+    esac
+    ;;
+  *) fail "STORAGE must be 'network', 'global' or 'local' (is '${STORAGE}')" ;;
 esac
 
 if [ "$ONLINE" -eq 1 ]; then

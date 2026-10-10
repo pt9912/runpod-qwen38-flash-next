@@ -25,6 +25,7 @@ source "$HERE/_api.sh"
 source "$HERE/_pool.sh"
 # shellcheck source=scripts/_storage.sh
 source "$HERE/_storage.sh"
+storage_resolve_model   # STORAGE=local: MODEL is the directory in the Pod, plus PREFETCH_REPO / PREFETCH_REVISION
 
 pool_resolve_pod "${1:-}"; rc=$?
 if [ "$rc" -eq 2 ]; then
@@ -38,7 +39,7 @@ case "$POD_ID" in *[!a-z0-9]*|"") echo "Invalid Pod ID '$POD_ID' (expected lower
 echo "Verifying Pod $POD_ID (source: $RESOLVED_SOURCE)"
 
 VOLUME="${EXPECTED_VOLUME_ID:-${NETWORK_VOLUME_ID:-}}"
-export STORAGE HF_HOME_DIR VLLM_CACHE_DIR
+export STORAGE HF_HOME_DIR VLLM_CACHE_DIR MODEL
 
 # Reading is safe to repeat: one network hiccup must not be read as "the Pod is wrong".
 tries="${VERIFY_TRIES:-3}"; delay="${VERIFY_DELAY:-2}"; n=0
@@ -91,7 +92,12 @@ try:
   # Network Volume (the important one: a silently dropped volume means no model on the Pod)
   storage = os.environ.get("STORAGE") or "network"
   nets = ((p.get("mounts") or {}).get("network")) or []
-  if storage == "global":
+  if storage == "local":
+      if nets:
+          warn("a Network Volume (%s) is attached although STORAGE=local: it binds the Pod to its datacenter" % nets[0].get("volumeId"))
+      else:
+          ok("no volume attached (STORAGE=local: the model is downloaded at every start)")
+  elif storage == "global":
       warn("STORAGE=global: the API does not report Global Volumes, so whether one is attached is NOT checked (the log shows it: the model directory must exist)")
       if nets:
           warn("a Network Volume (%s) is attached as well: it binds the Pod to its datacenter" % nets[0].get("volumeId"))
@@ -125,6 +131,18 @@ try:
   want_hf, want_vc = os.environ["HF_HOME_DIR"], os.environ["VLLM_CACHE_DIR"]
   if env.get("HF_HOME") != want_hf or env.get("VLLM_CACHE_ROOT") != want_vc:
       warn("HF_HOME / VLLM_CACHE_ROOT are %r / %r, expected %r / %r" % (env.get("HF_HOME"), env.get("VLLM_CACHE_ROOT"), want_hf, want_vc))
+  if storage == "local":
+      want_repo, want_rev = os.environ.get("PREFETCH_REPO"), os.environ.get("PREFETCH_REVISION")
+      if env.get("PREFETCH_REPO") != want_repo or env.get("PREFETCH_REVISION") != want_rev:
+          fail("env: PREFETCH_REPO/PREFETCH_REVISION are %r/%r, expected %r/%r (the model download at start)" % (env.get("PREFETCH_REPO"), env.get("PREFETCH_REVISION"), want_repo, want_rev))
+      else:
+          ok("env: PREFETCH_REPO=%s @ %s (downloaded to %s at start)" % (want_repo, str(want_rev)[:8], env.get("MODEL")))
+      if env.get("HF_HUB_OFFLINE") == "1":
+          fail("env: HF_HUB_OFFLINE=1: the download at start would fail")
+      if "HF_TOKEN" not in env:
+          warn("env: HF_TOKEN is not set: the download runs unauthenticated (slower, lower limits)")
+      if str(env.get("MODEL", "")).startswith("/workspace"):
+          warn("env: MODEL=%r is under /workspace: without a volume that is the container disk, which is fine, but /models is the default" % env.get("MODEL"))
   if storage == "global":
       for key in ("HF_HOME", "HF_HUB_CACHE", "VLLM_CACHE_ROOT"):
           if str(env.get(key, "")).startswith("/workspace"):

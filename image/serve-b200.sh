@@ -18,6 +18,31 @@ export VLLM_PLE_NVFP4=1
 export VLLM_PLE_NVFP4_MMAP="$MMAP"
 export VLLM_PLE_NVFP4_MMAP_PREWARM="$PREWARM"
 
+# Optional: fetch the checkpoint from Hugging Face into the local directory MODEL before serving (a Pod
+# without a volume: measured on RunPod, the 109 GB take 1.5 to 5 minutes). Skipped when the directory is
+# already complete (marker file), so a restart of the same container does not download again; an interrupted
+# download resumes. MODEL must then be an absolute local path. HF_TOKEN, if set, is used by the hub library.
+PREFETCH_REPO="${PREFETCH_REPO:-}"
+PREFETCH_REVISION="${PREFETCH_REVISION:-main}"
+if [ -n "$PREFETCH_REPO" ]; then
+  case "$MODEL" in
+    /?*) ;;
+    *) echo "PREFETCH_REPO needs MODEL to be an absolute local directory (MODEL is '$MODEL')." >&2; exit 2 ;;
+  esac
+  if [ -f "$MODEL/.prefetch-complete" ]; then
+    echo "Prefetch: $MODEL is already complete."
+  else
+    echo "Prefetch: downloading $PREFETCH_REPO @ $PREFETCH_REVISION to $MODEL ($(date -u +%H:%M:%S))"
+    mkdir -p "$MODEL"
+    export PREFETCH_REPO PREFETCH_REVISION MODEL
+    python3 -c 'import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id=os.environ["PREFETCH_REPO"], revision=os.environ["PREFETCH_REVISION"], local_dir=os.environ["MODEL"])' \
+      || { echo "Prefetch FAILED: the download from Hugging Face did not finish (a restart of the Pod resumes it)." >&2; exit 1; }
+    rm -rf "$MODEL/.cache"
+    echo "$PREFETCH_REPO@$PREFETCH_REVISION $(date -u +%FT%TZ)" > "$MODEL/.prefetch-complete"
+    echo "Prefetch: done ($(date -u +%H:%M:%S))."
+  fi
+fi
+
 if [ "$MMAP" = 1 ] && [ "$TP" != 1 ]; then
   echo "Warning: MMAP=1 with TP=$TP is not validated (the mmap patch was tested on one GPU)." >&2
 fi
